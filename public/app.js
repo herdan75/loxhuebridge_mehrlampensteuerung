@@ -66,22 +66,21 @@
             'button': { icon: '🔘', label: 'Schalter', order: 4 }
         };
 
-        // Sortierung: Typ -> Batterie (leer zuerst) -> Name
         const sorted = [...mappings].sort((a,b) => {
             const tA = typeConfig[a.hue_type] ? typeConfig[a.hue_type].order : 99;
             const tB = typeConfig[b.hue_type] ? typeConfig[b.hue_type].order : 99;
             if (tA !== tB) return tA - tB; 
-
             const sA = status[a.loxone_name] || {};
             const sB = status[b.loxone_name] || {};
             const batA = sA.bat !== undefined ? sA.bat : 100;
             const batB = sB.bat !== undefined ? sB.bat : 100;
             if (batA !== batB) return batA - batB; 
-
             return a.loxone_name.localeCompare(b.loxone_name);
         });
 
-        let html = '<table class="settings-table"><thead><tr><th>Name</th><th>Typ</th><th>Batterie</th><th>Letzter Wert</th></tr></thead><tbody>';
+        // --- Abschnitt 1: Mapping Status-Tabelle ---
+        let html = '<h3 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 8px;">📋 Geräte & Batterien</h3>';
+        html += '<table class="settings-table"><thead><tr><th>Name</th><th>Typ</th><th>Batterie</th><th>Letzter Wert</th></tr></thead><tbody>';
         
         sorted.forEach(m => {
             const st = status[m.loxone_name] || {};
@@ -92,16 +91,13 @@
                 if (st.bat <= 10) batStyle = 'color:red; font-weight:bold';
                 else if (st.bat <= 20) batStyle = 'color:orange';
             }
-
             let lastVal = '';
             if (st.on !== undefined) lastVal += `On:${st.on} `;
             if (st.bri !== undefined) lastVal += `Bri:${Math.round(st.bri)} `;
             if (st.motion !== undefined) lastVal += `Mot:${st.motion} `;
             if (st.contact !== undefined) lastVal += `Con:${st.contact} `;
             if (st.temp !== undefined) lastVal += `${st.temp}°C `;
-            
             const tConf = typeConfig[m.hue_type] || {icon:'❓', label: m.hue_type};
-
             html += `<tr>
                 <td><div style="font-weight:bold">${m.loxone_name}</div><div style="font-size:0.8em;color:#666">${m.hue_name}</div></td>
                 <td><span class="badge" style="background:#f1f3f5;color:#333; border:1px solid #ddd">${tConf.icon} ${tConf.label}</span></td>
@@ -109,9 +105,77 @@
                 <td style="font-size:0.8em; font-family:monospace; color:#555">${lastVal}</td>
             </tr>`;
         });
-        
         html += '</tbody></table>';
         div.innerHTML = html;
+
+        // --- Abschnitt 2 & 3: Bridge-Diagnose asynchron nachladen ---
+        try {
+            const bridgeRes = await fetch('/api/diagnostics/bridge');
+            if (!bridgeRes.ok) throw new Error('Bridge API nicht verfügbar');
+            const diagData = await bridgeRes.json();
+            if (!diagData) throw new Error('Keine Daten');
+
+            // Zigbee Bridge-Info
+            let bridgeHtml = '<h3 style="margin-top: 30px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">🌐 Bridge & Zigbee Netzwerk</h3>';
+            if (diagData.zigbee?.bridge) {
+                const b = diagData.zigbee.bridge;
+                bridgeHtml += `<table class="settings-table"><tbody>`;
+                if (b.bridge_id)    bridgeHtml += `<tr><td>Bridge ID</td><td style="font-family:monospace">${b.bridge_id}</td></tr>`;
+                if (b.time_zone?.time_zone) bridgeHtml += `<tr><td>Zeitzone</td><td>${b.time_zone.time_zone}</td></tr>`;
+                bridgeHtml += `</tbody></table>`;
+            }
+
+            // Zigbee Konnektivität pro Gerät
+            if (diagData.zigbee?.connectivity?.length > 0) {
+                bridgeHtml += `<table class="settings-table" style="margin-top:10px"><thead><tr><th>Gerät</th><th>Zigbee Status</th><th>UUID</th></tr></thead><tbody>`;
+                diagData.zigbee.connectivity.forEach(c => {
+                    const status_val = c.status || '?';
+                    let statusColor = '#888';
+                    if (status_val === 'connected') statusColor = 'var(--success,#4caf50)';
+                    else if (status_val === 'connectivity_issue') statusColor = 'red';
+                    else if (status_val === 'unidirectional_incoming') statusColor = 'orange';
+                    const devName = diagData.serviceToDeviceMap?.[c.id]?.deviceName || '–';
+                    bridgeHtml += `<tr>
+                        <td style="font-weight:bold">${devName}</td>
+                        <td><span style="color:${statusColor}; font-weight:bold">● ${status_val}</span></td>
+                        <td style="font-size:0.75em;color:#888;font-family:monospace">${c.id}</td>
+                    </tr>`;
+                });
+                bridgeHtml += `</tbody></table>`;
+            }
+
+            // Lampen-Capabilities
+            let capsHtml = '<h3 style="margin-top: 30px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">🎭 Lampen-Fähigkeiten & Effekte</h3>';
+            const lightMappings = mappings.filter(m => m.hue_type === 'light' || m.hue_type === 'group');
+            if (lightMappings.length > 0 && diagData.capabilities) {
+                capsHtml += `<table class="settings-table"><thead><tr><th>Loxone Name</th><th>Dimm</th><th>Farbe</th><th>Weiß</th><th>Effekte (persistent)</th><th>Zeiteffekte</th></tr></thead><tbody>`;
+                lightMappings.sort((a,b) => a.loxone_name.localeCompare(b.loxone_name)).forEach(m => {
+                    const caps = diagData.capabilities[m.hue_uuid] || {};
+                    const yes = '<span style="color:var(--success,#4caf50)">✅</span>';
+                    const no  = '<span style="color:#ccc">❌</span>';
+                    const effects = caps.supportedEffects?.filter(e => e !== 'no_effect').map(e =>
+                        `<span class="badge" style="font-size:0.75em;background:#f0f0f0">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
+                    const timedFx = caps.supportedTimedEffects?.filter(e => e !== 'no_effect').map(e =>
+                        `<span class="badge" style="font-size:0.75em;background:#e8f5e9">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
+                    capsHtml += `<tr>
+                        <td><div style="font-weight:bold">${m.loxone_name}</div><div style="font-size:0.8em;color:#666">${m.hue_name}</div></td>
+                        <td style="text-align:center">${caps.supportsDimming ? yes : no}</td>
+                        <td style="text-align:center">${caps.supportsColor  ? yes : no}</td>
+                        <td style="text-align:center">${caps.supportsCt     ? yes : no}</td>
+                        <td>${effects}</td>
+                        <td>${timedFx}</td>
+                    </tr>`;
+                });
+                capsHtml += `</tbody></table>`;
+            } else {
+                capsHtml += `<p style="color:var(--text-muted)">Keine Licht-Mappings vorhanden oder Bridge nicht erreichbar.</p>`;
+            }
+
+            div.innerHTML += bridgeHtml + capsHtml;
+
+        } catch(e) {
+            div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Bridge-Diagnose nicht verfügbar: ${e.message}</div>`;
+        }
     }
 
     async function loadDetected() {
