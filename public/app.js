@@ -322,6 +322,16 @@
         const select = document.getElementById('hueTarget');
         if(!select) return;
         select.innerHTML = '<option value="">-- Wählen --</option>';
+
+        // Füge "Alle Lichter" als spezielle Option hinzu (nur im Lichter-Tab und wenn noch kein 'all'-Mapping existiert)
+        if (currentTab === 'light' && !mappings.some(m => m.hue_uuid === 'pseudo-all' || m.loxone_name === 'all')) {
+            const allOpt = document.createElement('option');
+            allOpt.value = 'pseudo-all';
+            allOpt.innerHTML = '🏠 Alle Lichter (bridge_home)';
+            allOpt.dataset.type = 'group';
+            select.appendChild(allOpt);
+        }
+
         targets.forEach(t => {
             if(mappings.some(m=>m.hue_uuid === t.uuid)) return;
             if(currentTab === 'light' && (t.type !== 'light' && t.type !== 'group')) return;
