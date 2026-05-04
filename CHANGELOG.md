@@ -8,15 +8,27 @@ und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/spec/v
 
 ## [2.3.0] - 2026-05-04
 ### 🌟 New Features
-- **Nativer "Alles" Befehl:** Der Befehl `/all` (bzw. `/alles`) wurde grundlegend verbessert. Er nutzt nun die native `bridge_home` Ressource der Hue Bridge, um das gesamte Zuhause nahezu verzögerungsfrei zu schalten.
-- **Batterie-Warnsystem:** Geräte mit einem Batteriestand von ≤ 10 % werden nun im Dashboard optisch hervorgehoben (roter Text + leeres Batterisymbol), um einen rechtzeitigen Austausch zu signalisieren.
-- **Automatisierte Tests:** Einführung einer robusten Test-Infrastruktur basierend auf dem nativen Node.js Test-Runner (`node:test`). Die Kernmodule erreichen eine Testabdeckung von über 85 %.
+- **Hue Effekte & Alert:** Lampen können jetzt per einfachem Befehl in spezielle Effektmodi versetzt werden – vollständig rückwärtskompatibel zu allen bestehenden Steuerungen.
+  - `/{name}/alert` → Einmaliges Breathe-Blinken (ideal für Alarmierung, Türklingel-Bestätigung, etc.)
+  - `/{name}/candle` → Kerzenflackern 🕯️ (persistent bis zum Stoppen)
+  - `/{name}/fire` → Feuereffekt 🔥 (persistent, nur neuere Lampen)
+  - `/{name}/prism` → Regenbogen-Farbwechsel 🌈 (persistent, nur Farblampen)
+  - `/{name}/sparkle`, `/opal`, `/glisten` → weitere atmosphärische Effekte
+  - `/{name}/noeffect` → Aktiven Effekt stoppen
+  - `/{name}/sunrise/30` → 30-Sekunden Sonnenaufgang-Simulation 🌅 (oder beliebige Dauer in Sekunden)
+- **Erweiterter Diagnose-Tab:** Der Diagnose-Tab zeigt jetzt drei Abschnitte:
+  1. 📋 Geräte & Batterien (bekannt)
+  2. 🌐 Bridge & Zigbee Netzwerk – Verbindungsstatus (`connected` / `connectivity_issue`) jedes einzelnen Zigbee-Geräts, Bridge-ID und Zeitzone
+  3. 🎭 Lampen-Fähigkeiten – Übersichtstabelle zeigt pro Lampe, ob Dimmen ✅, Farbe ✅ und Weißton ✅ unterstützt werden, sowie alle verfügbaren Effekte.
+- **Nativer "Alles" Befehl:** Der Befehl `/all` (bzw. `/alles`) nutzt nun die native `bridge_home` Ressource der Hue Bridge, um das gesamte Zuhause nahezu verzögerungsfrei zu schalten. Im UI ist die Option „🏠 Alle Lichter (bridge_home)" jetzt im Dropdown wählbar.
+- **Batterie-Warnsystem:** Geräte mit einem Batteriestand von ≤ 10 % werden im Dashboard optisch hervorgehoben (rotes Badge + Leer-Symbol 🪫).
+- **Automatisierte Tests:** Einführung einer robusten Test-Infrastruktur basierend auf dem nativen Node.js Test-Runner (`node:test`) mit 16 Tests und > 85 % Abdeckung der Kernmodule.
 
 ### 🔄 Verbesserungen & Refactoring
-- **Backend-Modularisierung:** Komplette Neustrukturierung der `server.js`. Die Logik wurde in saubere Module im Ordner `lib/` (logger, config, loxone, mqtt, hue, routes) ausgelagert, was die Wartbarkeit und Stabilität massiv erhöht.
+- **Backend-Modularisierung:** Komplette Neustrukturierung der `server.js`. Die Logik wurde in saubere Module im Ordner `lib/` (`logger`, `config`, `loxone`, `mqtt`, `hue`, `routes`) ausgelagert, was die Wartbarkeit und Stabilität massiv erhöht.
 - **Frontend-Cleanup:** Trennung von HTML, CSS und JavaScript. Die `index.html` wurde bereinigt, Styles wanderten in `style.css` und die Logik in `app.js`.
-- **Smarte Listen:** Die Liste der "Neu erkannten Befehle" filtert nun automatisch Duplikate, was für mehr Übersicht sorgt.
-- **Robustheit:** Zuvor leere `catch`-Blöcke loggen nun detaillierte Fehlermeldungen, um die Fehlersuche zu erleichtern.
+- **Smarte Listen:** Die Liste der „Neu erkannten Befehle" filtert nun automatisch Duplikate.
+- **Robustheit:** Zuvor leere `catch`-Blöcke loggen nun detaillierte Fehlermeldungen.
 
 ## [2.2.0] - 2026-02-26
 ### 🌟 New Features

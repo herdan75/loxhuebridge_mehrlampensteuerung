@@ -8,12 +8,18 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ## 🚀 Features V2.3.0
 
-* **Nativer "Alles" Befehl:** Nutzt die Hue `bridge_home` API für blitzschnelles Ausschalten des gesamten Hauses.
-* **Modularer Kern:** Hochperformante und wartbare Backend-Architektur durch saubere Modul-Trennung.
+* **Nativer „Alles" Befehl:** Nutzt die Hue `bridge_home` API für blitzschnelles Ausschalten des gesamten Hauses.
+* **Hue Effekte & Alert:** Steuere Lampen mit atmosphärischen Effekten direkt aus Loxone:
+    * `/{name}/alert` → Einmaliges Blinken (Alarmmeldung, Türklingel)
+    * `/{name}/candle` / `/fire` / `/prism` / `/sparkle` → Persistente Atmosphäre-Effekte
+    * `/{name}/noeffect` → Effekt stoppen
+    * `/{name}/sunrise/30` → 30-Sekunden Sonnenaufgang (oder beliebige Dauer)
+* **Modularer Kern:** Hochperformante und wartbare Backend-Architektur durch saubere Modul-Trennung (`lib/`).
 * **Smart Setup:** Automatische Suche der Hue Bridge und Pairing per Web-Interface.
 * **Live Dashboard:** Echtzeit-Anzeige aller Lichter (mit Live-Werten für Kelvin/Hex/Dim), Sensoren und Batterieständen (inkl. Warnsystem bei ≤ 10 %).
-* **Smart Mapping:** Einfache Zuordnung per "Klick & Wähl" mit automatischer Duplikatsfilterung bei erkannten Befehlen.
-* **Automatisierte Tests:** Maximale Zuverlässigkeit durch eine Test-Infrastruktur mit > 85 % Code-Coverage.
+* **Smart Mapping:** Einfache Zuordnung per „Klick & Wähl" mit automatischer Duplikatsfilterung bei erkannten Befehlen.
+* **Erweiterter Diagnose-Tab:** Zeigt Gerätestatus, Zigbee-Konnektivität pro Gerät und eine vollständige Übersicht aller Lampen-Fähigkeiten (Dimmen, Farbe, Weißton, unterstützte Effekte).
+* **Automatisierte Tests:** Maximale Zuverlässigkeit durch eine Test-Infrastruktur mit 16 Tests und > 85 % Code-Coverage.
 * **Persistent Logging (SQLite):** Dank nativer SQLite-Datenbank bleiben Logs auch nach Neustarts erhalten und sind extrem performant durchsuchbar (Volltextsuche & Filter).
 * **Backup & Restore:** Lade deine komplette Konfiguration inkl. Mappings als Backup herunter und stelle sie bei Bedarf wieder her.
 * **Loxone Integration:**
