@@ -333,4 +333,10 @@ input:checked + .slider:before { transform: translateX(18px); }
 .status-ok { color: #4caf50; font-weight: bold; }
 .status-err { color: #f44336; font-weight: bold; }
 .mac-addr { font-family: monospace; color: #888; font-size: 0.8em; }
-.diag-h3 { margin: 20px 0 10px 0; font-size: 1rem; color: var(--text-main); border-bottom: 2px solid var(--border); padding-bottom: 5px; }
+.diag-h3 { margin: 20px 0 10px 0; font-size: 1rem; color: var(--text-main); border-bottom: 2px solid var(--border); padding-bottom: 5px; }        /* Macht die Cards visuell als klickbar erkennbar */
+        .mapping-item { cursor: pointer; transition: background 0.2s, transform 0.1s; }
+        .mapping-item:hover { background: #f8f9fa; transform: translateY(-1px); }
+        .slider-container { display: flex; align-items: center; gap: 10px; width: 100%; }
+        .slider-container input[type="range"] { flex: 1; }
+        .slider-val { font-family: monospace; width: 60px; text-align: right; color: var(--accent); font-weight: bold; }
+        .settings-card { padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 10px; }
