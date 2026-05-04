@@ -6,11 +6,14 @@
 
 Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung und nutzt die moderne Hue Event-Schnittstelle (SSE), um Statusänderungen in Echtzeit an Loxone (UDP) und MQTT Broker zurückzumelden.
 
-## 🚀 Features V2.2.0
+## 🚀 Features V2.3.0
 
+* **Nativer "Alles" Befehl:** Nutzt die Hue `bridge_home` API für blitzschnelles Ausschalten des gesamten Hauses.
+* **Modularer Kern:** Hochperformante und wartbare Backend-Architektur durch saubere Modul-Trennung.
 * **Smart Setup:** Automatische Suche der Hue Bridge und Pairing per Web-Interface.
-* **Live Dashboard:** Echtzeit-Anzeige aller Lichter (mit Live-Werten für Kelvin/Hex/Dim), Sensoren und Batterieständen.
-* **Smart Mapping:** Einfache Zuordnung per "Klick & Wähl".
+* **Live Dashboard:** Echtzeit-Anzeige aller Lichter (mit Live-Werten für Kelvin/Hex/Dim), Sensoren und Batterieständen (inkl. Warnsystem bei ≤ 10 %).
+* **Smart Mapping:** Einfache Zuordnung per "Klick & Wähl" mit automatischer Duplikatsfilterung bei erkannten Befehlen.
+* **Automatisierte Tests:** Maximale Zuverlässigkeit durch eine Test-Infrastruktur mit > 85 % Code-Coverage.
 * **Persistent Logging (SQLite):** Dank nativer SQLite-Datenbank bleiben Logs auch nach Neustarts erhalten und sind extrem performant durchsuchbar (Volltextsuche & Filter).
 * **Backup & Restore:** Lade deine komplette Konfiguration inkl. Mappings als Backup herunter und stelle sie bei Bedarf wieder her.
 * **Loxone Integration:**

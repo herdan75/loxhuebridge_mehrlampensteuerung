@@ -6,6 +6,18 @@ Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 [![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/bausi2k)
 
+## [2.3.0] - 2026-05-04
+### 🌟 New Features
+- **Nativer "Alles" Befehl:** Der Befehl `/all` (bzw. `/alles`) wurde grundlegend verbessert. Er nutzt nun die native `bridge_home` Ressource der Hue Bridge, um das gesamte Zuhause nahezu verzögerungsfrei zu schalten.
+- **Batterie-Warnsystem:** Geräte mit einem Batteriestand von ≤ 10 % werden nun im Dashboard optisch hervorgehoben (roter Text + leeres Batterisymbol), um einen rechtzeitigen Austausch zu signalisieren.
+- **Automatisierte Tests:** Einführung einer robusten Test-Infrastruktur basierend auf dem nativen Node.js Test-Runner (`node:test`). Die Kernmodule erreichen eine Testabdeckung von über 85 %.
+
+### 🔄 Verbesserungen & Refactoring
+- **Backend-Modularisierung:** Komplette Neustrukturierung der `server.js`. Die Logik wurde in saubere Module im Ordner `lib/` (logger, config, loxone, mqtt, hue, routes) ausgelagert, was die Wartbarkeit und Stabilität massiv erhöht.
+- **Frontend-Cleanup:** Trennung von HTML, CSS und JavaScript. Die `index.html` wurde bereinigt, Styles wanderten in `style.css` und die Logik in `app.js`.
+- **Smarte Listen:** Die Liste der "Neu erkannten Befehle" filtert nun automatisch Duplikate, was für mehr Übersicht sorgt.
+- **Robustheit:** Zuvor leere `catch`-Blöcke loggen nun detaillierte Fehlermeldungen, um die Fehlersuche zu erleichtern.
+
 ## [2.2.0] - 2026-02-26
 ### 🌟 New Features
 - **Dynamics ignorieren:** Es kann nun pro Lampe/Gruppe individuell eingestellt werden, ob weiche Übergänge (Transition/Dynamics) gesendet werden sollen. Für reine An/Aus-Schalter (ohne Dimmfunktion) wird dies automatisch erzwungen.

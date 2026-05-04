@@ -4,7 +4,8 @@
   "description": "Philips Hue V2 to Loxone Bridge",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test --experimental-test-coverage"
   },
   "dependencies": {
     "axios": "^1.13.5",
