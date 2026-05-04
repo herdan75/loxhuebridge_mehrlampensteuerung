@@ -51,6 +51,31 @@
         }
     }
 
+    // --- Hilfsfunktion für einheitliche Batteriewarnungen ---
+    function getBatteryHTML(bat) {
+        if (bat === undefined || bat === null) return { badge: '', textStyle: '' };
+        
+        let color = '';
+        let badgeStyle = '';
+        let textStyle = '';
+        let icon = '🔋';
+
+        if (bat <= 10) {
+            color = 'red';
+            badgeStyle = 'background:#ffcdcd; color:red; font-weight:bold;';
+            textStyle = 'color:red; font-weight:bold;';
+            icon = '🪫';
+        } else if (bat <= 20) {
+            color = 'orange';
+            badgeStyle = 'background:#fff3e0; color:orange; font-weight:bold;';
+            textStyle = 'color:orange; font-weight:bold;';
+            icon = '🔋';
+        }
+
+        const badge = `<span class="badge" style="${badgeStyle}">${icon} ${bat}%${bat <= 10 ? ' (Leer)' : ''}</span>`;
+        return { badge, textStyle };
+    }
+
     async function loadDiagnostics() {
         const div = document.getElementById('diagContent');
         if(!div) return;
@@ -84,13 +109,8 @@
         
         sorted.forEach(m => {
             const st = status[m.loxone_name] || {};
-            let bat = '-';
-            let batStyle = '';
-            if (st.bat !== undefined) {
-                bat = st.bat + '%';
-                if (st.bat <= 10) batStyle = 'color:red; font-weight:bold';
-                else if (st.bat <= 20) batStyle = 'color:orange';
-            }
+            const { badge, textStyle } = getBatteryHTML(st.bat);
+
             let lastVal = '';
             if (st.on !== undefined) lastVal += `On:${st.on} `;
             if (st.bri !== undefined) lastVal += `Bri:${Math.round(st.bri)} `;
@@ -99,9 +119,9 @@
             if (st.temp !== undefined) lastVal += `${st.temp}°C `;
             const tConf = typeConfig[m.hue_type] || {icon:'❓', label: m.hue_type};
             html += `<tr>
-                <td><div style="font-weight:bold">${m.loxone_name}</div><div style="font-size:0.8em;color:#666">${m.hue_name}</div></td>
+                <td style="${textStyle}"><div style="font-weight:bold">${m.loxone_name}</div><div style="font-size:0.8em;color:#666">${m.hue_name}</div></td>
                 <td><span class="badge" style="background:#f1f3f5;color:#333; border:1px solid #ddd">${tConf.icon} ${tConf.label}</span></td>
-                <td style="${batStyle}">${bat}</td>
+                <td>${badge || '-'}</td>
                 <td style="font-size:0.8em; font-family:monospace; color:#555">${lastVal}</td>
             </tr>`;
         });
@@ -336,13 +356,8 @@
         if (has(st.temp)) badges += `<span class="badge">${st.temp}°C</span>`;
         if (has(st.lux)) badges += `<span class="badge">${st.lux} lx</span>`;
         if (has(st.contact)) badges += `<span class="badge" style="background:${st.contact?'#ffcdcd':'#e1ffe1'}">${st.contact?'🔓 OFFEN':'🔒 ZU'}</span>`;
-        if (has(st.bat)) {
-            if (st.bat <= 10) {
-                badges += `<span class="badge" style="background:#ffcdcd; color:red; font-weight:bold;">🪫 ${st.bat}% (Leer)</span>`;
-            } else {
-                badges += `<span class="badge">🔋 ${st.bat}%</span>`;
-            }
-        }
+        const { badge: batBadge, textStyle: batTextStyle } = getBatteryHTML(st.bat);
+        if (batBadge) badges += batBadge;
         
         if (has(st.on)) {
             if(currentTab === 'light' || st.on) {
@@ -366,7 +381,7 @@
         div.onclick = () => showDetails(m.hue_uuid, m.loxone_name);
 
         div.innerHTML = `
-            <div>
+            <div style="${batTextStyle}">
                 <div class="mapping-lox">${m.loxone_name}</div>
                 <div class="mapping-hue">${m.hue_name}</div>
             </div>
