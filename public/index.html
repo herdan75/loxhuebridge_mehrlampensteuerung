@@ -412,7 +412,13 @@
         if (has(st.temp)) badges += `<span class="badge">${st.temp}°C</span>`;
         if (has(st.lux)) badges += `<span class="badge">${st.lux} lx</span>`;
         if (has(st.contact)) badges += `<span class="badge" style="background:${st.contact?'#ffcdcd':'#e1ffe1'}">${st.contact?'🔓 OFFEN':'🔒 ZU'}</span>`;
-        if (has(st.bat)) badges += `<span class="badge">🔋${st.bat}%</span>`;
+        if (has(st.bat)) {
+            if (st.bat <= 10) {
+                badges += `<span class="badge" style="background:#ffcdcd; color:red; font-weight:bold;">🪫 ${st.bat}% (Leer)</span>`;
+            } else {
+                badges += `<span class="badge">🔋 ${st.bat}%</span>`;
+            }
+        }
         
         if (has(st.on)) {
             if(currentTab === 'light' || st.on) {
