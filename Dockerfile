@@ -1,15 +1,18 @@
-# UPDATE: Wir nutzen jetzt die aktuelle LTS Version 24
+# loxHueBridge Mehrlampensteuerung
+# Node.js 24 wird benötigt, da das Projekt das native node:sqlite Modul verwendet.
 FROM node:24-alpine
 
 WORKDIR /app
 
-# Dependencies installieren
-COPY package.json ./
-RUN npm install --production
+# Nur package-Dateien zuerst kopieren, damit Docker den Dependency-Layer cachen kann.
+COPY package*.json ./
 
-# Code kopieren
+# Produktions-Abhängigkeiten installieren.
+RUN npm ci --omit=dev
+
+# Anwendung kopieren.
 COPY . .
 
 EXPOSE 8555
-# UPDATE: Kein Flag mehr nötig in Node 24!
+
 CMD ["node", "server.js"]
