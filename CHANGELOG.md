@@ -1,10 +1,15 @@
-# Changelog
+## [2.4.0] - 2026-05-15
+### 🌟 New Features
+- **Mehrlampensynchronisierung pro Lampe:** Lampen können einzeln für einen gemeinsamen Sammel-/Batch-Ablauf aktiviert werden. Dadurch lassen sich mehrere einzeln angesteuerte Hue-Lampen bei Ambient-Szenen deutlich synchroner starten.
+- **Sync-Offset pro Lampe:** Für jede Multi-Sync-Lampe kann ein individueller Zeitversatz in Millisekunden gesetzt werden. Negative Werte senden früher, positive Werte später.
+- **Konfigurierbare Multi-Sync Parameter:** Sammelfenster, Batchgröße und Batch-Pause können konfiguriert werden.
 
-Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
+### 🐛 Bugfixes
+- **Robuster SSE/EventStream Parser:** Hue Events werden nun gepuffert und erst nach vollständigem SSE-Event geparst. Das behebt sporadische JSON-Parsing-Fehler bei großen oder fragmentierten Events, z. B. `Unexpected end of JSON input`, `Unterminated string in JSON` und `Expected double-quoted property name in JSON`.
 
-Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-und dieses Projekt hält sich an [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/bausi2k)
+### 🔄 Verbesserungen
+- **Gezielter Queue-Bypass:** Die bestehende Queue bleibt für normale Lampen erhalten. Nur Lampen mit aktivierter Mehrlampensynchronisierung nutzen den neuen Batch-Ablauf.
+- **Fork-Docker-Setup:** `docker-compose.yml` baut das lokale Image aus dem Fork, damit beim Testen nicht versehentlich das Original-Image von `ghcr.io/bausi2k/loxhuebridge` verwendet wird.
 
 ## [2.3.0] - 2026-05-04
 ### 🌟 New Features
