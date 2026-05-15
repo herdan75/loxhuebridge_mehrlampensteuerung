@@ -1,17 +1,21 @@
 services:
   loxhuebridge:
-    # Neu: Wir laden das fertige Image von GitHub
-    image: ghcr.io/bausi2k/loxhuebridge:latest
-    
+    # Dieses Compose-File baut den Container direkt aus diesem Fork.
+    # Damit wird nicht versehentlich das Original-Image ghcr.io/bausi2k/loxhuebridge verwendet.
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: loxhuebridge-mehrlampensteuerung:local
     container_name: loxhuebridge
     restart: always
-    
-    # WICHTIG für Loxone UDP Kommunikation
+
+    # Wichtig für die Loxone UDP-Kommunikation
     network_mode: "host"
-    
+
     environment:
       - TZ=Europe/Vienna
-      
+
     volumes:
-      # Nur noch der Data-Ordner ist wichtig
+      # Enthält config.json, mapping.json und logs.db
       - ./data:/app/data
