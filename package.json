@@ -1,7 +1,7 @@
 {
-  "name": "loxhuebridge",
-  "version": "2.3.1",
-  "description": "Philips Hue V2 to Loxone Bridge",
+  "name": "loxhuebridge-mehrlampensteuerung",
+  "version": "2.4.0",
+  "description": "Philips Hue V2 to Loxone Bridge with per-light multi-sync and robust SSE parsing",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
