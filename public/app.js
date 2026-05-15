@@ -1,4 +1,4 @@
-    let currentTab = 'light';
+let currentTab = 'light';
     let targets = [];
     let mappings = [];
     let status = {};
@@ -426,7 +426,16 @@
         const nameIn = document.getElementById('inName');
         const hueSel = document.getElementById('hueTarget');
         if(!nameIn.value || !hueSel.value) return alert("Fehlende Daten");
-        mappings.push({loxone_name: nameIn.value.toLowerCase(), hue_uuid: hueSel.value, hue_name: hueSel.options[hueSel.selectedIndex].text, hue_type: hueSel.options[hueSel.selectedIndex].dataset.type});
+        mappings.push({
+            loxone_name: nameIn.value.toLowerCase(),
+            hue_uuid: hueSel.value,
+            hue_name: hueSel.options[hueSel.selectedIndex].text,
+            hue_type: hueSel.options[hueSel.selectedIndex].dataset.type,
+            sync_lox: true,
+            ignore_dynamics: false,
+            multi_sync: false,
+            sync_offset_ms: 0
+        });
         await fetch('/api/mapping', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(mappings)});
         nameIn.value=''; loadMappings(); loadTargets();
     }
@@ -453,6 +462,9 @@
         
         d.transitionTime = document.getElementById('sys_transition').value;
         d.throttleTime = document.getElementById('sys_throttle').value;
+        d.multiSyncWindowMs = document.getElementById('sys_multiSyncWindowMs') ? document.getElementById('sys_multiSyncWindowMs').value : 120;
+        d.multiBatchSize = document.getElementById('sys_multiBatchSize') ? document.getElementById('sys_multiBatchSize').value : 4;
+        d.multiBatchDelayMs = document.getElementById('sys_multiBatchDelayMs') ? document.getElementById('sys_multiBatchDelayMs').value : 30;
 
         d.debug = document.getElementById('sys_debug').checked;
         d.mqttEnabled = document.getElementById('sys_mqttEnabled').checked;
@@ -463,7 +475,12 @@
                 loxoneIp: d.loxIp, loxonePort: d.loxPort, debug: d.debug,
                 transitionTime: d.transitionTime, throttleTime: d.throttleTime,
                 mqttEnabled: d.mqttEnabled, mqttBroker: d.mqttBroker, mqttPort: d.mqttPort, mqttUser: d.mqttUser, mqttPass: d.mqttPass, mqttPrefix: d.mqttPrefix,
-                disableLogDisk: d.disableLogDisk
+                disableLogDisk: d.disableLogDisk,
+                multiLightControl: {
+                    syncWindowMs: d.multiSyncWindowMs,
+                    batchSize: d.multiBatchSize,
+                    batchDelayMs: d.multiBatchDelayMs
+                }
             })});
             alert("Gespeichert!");
             loadSettings();
@@ -498,6 +515,31 @@
                             <input type="range" id="sys_throttle" min="0" max="1000" step="50" value="${v(s.throttleTime)}" oninput="document.getElementById('val_thro').innerText = this.value + ' ms'">
                             <span id="val_thro" class="slider-val">${v(s.throttleTime)} ms</span>
                         </div>
+                    </td>
+                </tr>
+
+                <tr><td colspan="2" style="background:#eee;font-weight:bold">Mehrlampensynchronisierung</td></tr>
+                <tr>
+                    <td>Sammelfenster</td>
+                    <td>
+                        <div class="slider-container">
+                            <input type="range" id="sys_multiSyncWindowMs" min="50" max="500" step="10" value="${v(s.multiLightControl?.syncWindowMs ?? 120)}" oninput="document.getElementById('val_multiSyncWindow').innerText = this.value + ' ms'">
+                            <span id="val_multiSyncWindow" class="slider-val">${v(s.multiLightControl?.syncWindowMs ?? 120)} ms</span>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Batchgröße</td>
+                    <td><input type="number" id="sys_multiBatchSize" min="1" max="20" step="1" value="${v(s.multiLightControl?.batchSize ?? 4)}"></td>
+                </tr>
+                <tr>
+                    <td>Batch-Pause</td>
+                    <td>
+                        <div class="slider-container">
+                            <input type="range" id="sys_multiBatchDelayMs" min="0" max="300" step="10" value="${v(s.multiLightControl?.batchDelayMs ?? 30)}" oninput="document.getElementById('val_multiBatchDelay').innerText = this.value + ' ms'">
+                            <span id="val_multiBatchDelay" class="slider-val">${v(s.multiLightControl?.batchDelayMs ?? 30)} ms</span>
+                        </div>
+                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Gilt nur für Lampen mit aktivierter Mehrlampensynchronisierung.</div>
                     </td>
                 </tr>
                 
@@ -559,6 +601,24 @@
                     </div>
                 </div>
                 
+                <div class="settings-card" style="display:${entry.hue_type === 'light' ? 'block' : 'none'};">
+                    <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                        <input type="checkbox" ${entry.multi_sync === true ? 'checked' : ''} onchange="updateMappingSetting('${loxoneName}', 'multi_sync', this.checked)"> 
+                        <span style="font-weight:500;">Mehrlampensynchronisierung</span>
+                    </label>
+                    <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">
+                        Nimmt diese Lampe in den gemeinsamen Sammel-/Batch-Ablauf auf. Nur einzelne Hue-Lampen werden hier synchronisiert, keine Gruppen.
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-left:24px; margin-top:10px;">
+                        <span style="font-size:0.85rem; color:var(--text-muted); min-width:90px;">Sync-Offset</span>
+                        <input type="number" min="-500" max="1000" step="10" value="${entry.sync_offset_ms || 0}" onchange="updateMappingSetting('${loxoneName}', 'sync_offset_ms', parseInt(this.value) || 0)" style="max-width:120px;">
+                        <span style="font-size:0.85rem; color:var(--text-muted);">ms</span>
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--text-muted); margin-left:24px; margin-top:4px;">
+                        Negativ = früher senden, positiv = später senden. Empfohlen: zuerst 0 ms, danach in 10-ms-Schritten abstimmen.
+                    </div>
+                </div>
+
                 <hr style="border:0; border-top:1px solid var(--border); margin: 20px 0;">
             `;
         }
