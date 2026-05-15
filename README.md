@@ -1,12 +1,35 @@
-# loxHueBridge 🇦🇹
-
-[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/bausi2k)
+# loxHueBridge Mehrlampensteuerung 🇦🇹
 
 **loxHueBridge** ist eine bidirektionale Schnittstelle zwischen dem **Loxone Miniserver**, der **Philips Hue Bridge (V2 / API)** und optional **MQTT**.
 
+Dieser Fork erweitert loxHueBridge um eine **Mehrlampensynchronisierung pro Lampe** und behebt das **robuste SSE/EventStream Parsing** bei großen Hue Events.
+
 Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung und nutzt die moderne Hue Event-Schnittstelle (SSE), um Statusänderungen in Echtzeit an Loxone (UDP) und MQTT Broker zurückzumelden.
 
-## 🚀 Features V2.3.0
+> Originalprojekt: https://github.com/bausi2k/loxhuebridge  
+> Fork: https://github.com/herdan75/loxhuebridge_mehrlampensteuerung
+
+---
+
+## 🚀 Features V2.4.0 Mehrlampensteuerung
+
+### Neu in diesem Fork
+
+* **Mehrlampensynchronisierung pro Lampe:** Einzelne Hue-Lampen können gezielt in einen gemeinsamen Sammel-/Batch-Ablauf aufgenommen werden.
+* **Sync-Offset pro Lampe:** Jede Lampe kann zeitlich feinjustiert werden.
+    * negativer Offset = früher senden
+    * positiver Offset = später senden
+    * sinnvoller Bereich: ca. -500 ms bis +1000 ms
+* **Sammelfenster für gleichzeitige Szenen:** Mehrere Loxone-Kommandos werden kurz gesammelt und dann gebündelt an die Hue Bridge gesendet.
+* **Batch-Steuerung:** Mehrere Lampen werden in kleinen Gruppen nahezu parallel gesendet, ohne die Hue Bridge unnötig zu überlasten.
+* **Queue-Bypass nur für Multi-Sync-Lampen:** Die bestehende Queue bleibt für normale Lampen erhalten. Nur Lampen mit aktivierter Mehrlampensynchronisierung nutzen den neuen Ablauf.
+* **Robuster SSE/EventStream Parser:** Behebt sporadische Fehler wie:
+    * `Unexpected end of JSON input`
+    * `Unterminated string in JSON`
+    * `Expected double-quoted property name in JSON`
+* **Globale Multi-Sync Feineinstellungen:** Sammelfenster, Batchgröße und Batch-Pause sind konfigurierbar.
+
+### Bestehende Features
 
 * **Nativer „Alles" Befehl:** Nutzt die Hue `bridge_home` API für blitzschnelles Ausschalten des gesamten Hauses.
 * **Hue Effekte & Alert:** Steuere Lampen mit atmosphärischen Effekten direkt aus Loxone:
@@ -16,19 +39,15 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
     * `/{name}/sunrise/30` → 30-Sekunden Sonnenaufgang (oder beliebige Dauer)
 * **Modularer Kern:** Hochperformante und wartbare Backend-Architektur durch saubere Modul-Trennung (`lib/`).
 * **Smart Setup:** Automatische Suche der Hue Bridge und Pairing per Web-Interface.
-* **Live Dashboard:** Echtzeit-Anzeige aller Lichter (mit Live-Werten für Kelvin/Hex/Dim), Sensoren und Batterieständen (inkl. Warnsystem bei ≤ 10 %).
+* **Live Dashboard:** Echtzeit-Anzeige aller Lichter, Sensoren und Batteriestände.
 * **Smart Mapping:** Einfache Zuordnung per „Klick & Wähl" mit automatischer Duplikatsfilterung bei erkannten Befehlen.
-* **Erweiterter Diagnose-Tab:** Zeigt Gerätestatus, Zigbee-Konnektivität pro Gerät und eine vollständige Übersicht aller Lampen-Fähigkeiten (Dimmen, Farbe, Weißton, unterstützte Effekte).
-* **Automatisierte Tests:** Maximale Zuverlässigkeit durch eine Test-Infrastruktur mit 16 Tests und > 85 % Code-Coverage.
-* **Persistent Logging (SQLite):** Dank nativer SQLite-Datenbank bleiben Logs auch nach Neustarts erhalten und sind extrem performant durchsuchbar (Volltextsuche & Filter).
+* **Erweiterter Diagnose-Tab:** Zeigt Gerätestatus, Zigbee-Konnektivität pro Gerät und eine vollständige Übersicht aller Lampen-Fähigkeiten.
+* **Persistent Logging (SQLite):** Logs bleiben nach Neustarts erhalten und sind durchsuchbar.
 * **Backup & Restore:** Lade deine komplette Konfiguration inkl. Mappings als Backup herunter und stelle sie bei Bedarf wieder her.
-* **Loxone Integration:**
-    * **Steuern:** Schalten, Dimmen, Warmweiß & RGB (via Virtueller Ausgang).
-    * **Empfangen:** Bewegung, Taster, Helligkeit, Temperatur, Batterie (via UDP Eingang).
-* **MQTT Support:** Sendet alle Statusänderungen parallel an einen MQTT Broker (z.B. für Home Assistant, ioBroker).
-* **Stabilität:** Integrierter Watchdog überwacht die Verbindung und eine intelligente Queue verhindert Überlastung der Bridge (Error 429).
-* 🎛️ **Individuelle Geräte-Steuerung:** Detaillierte Einstellungen pro Gerät direkt im UI (z. B. Deaktivieren von Überblendzeiten/Dynamics für Drittanbieter-Relais).
-* 📊 **Smartes Dashboard:** Live-Status aller Geräte, Batteriewarnungen und komfortable System-Konfiguration per Web-Interface.
+* **Loxone Integration:** Schalten, Dimmen, Warmweiß, RGB sowie Rückmeldungen via UDP.
+* **MQTT Support:** Sendet Statusänderungen parallel an einen MQTT Broker.
+* **Stabilität:** Watchdog, Queue und Rate-Limiting verhindern Überlastung der Bridge.
+* 🎛️ **Individuelle Geräte-Steuerung:** Detaillierte Einstellungen pro Gerät direkt im UI.
 
 ---
 
@@ -36,68 +55,126 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 * Philips Hue Bridge (V2, eckiges Modell)
 * Loxone Miniserver
-* Ein Server für Docker (z.B. Raspberry Pi, Synology, Unraid)
+* Ein Server für Docker, z. B. Raspberry Pi, Synology, Unraid oder LoxBerry mit Docker
 * *Nur bei manueller Installation:* Node.js 24+
 
 ---
 
-## 🛠 Installation (Empfohlen: Docker)
+## 🛠 Installation dieses Forks mit Docker Compose
 
-Du musst keinen Code mehr bauen. Du brauchst nur Docker und eine `docker-compose.yml`.
+Diese Variante baut das Image direkt aus deinem lokalen Fork-Verzeichnis. Damit ist sichergestellt, dass wirklich der Code aus diesem Repository verwendet wird und nicht das Original-Image.
 
-1.  **Ordner erstellen:**
-    Erstelle einen Ordner (z.B. `loxhuebridge`) auf deinem Server.
+1. **Repository klonen:**
 
-2.  **Datei erstellen:**
-    Erstelle darin eine `docker-compose.yml` mit folgendem Inhalt:
-
-    ```yaml
-    services:
-      loxhuebridge:
-        image: ghcr.io/bausi2k/loxhuebridge:latest
-        container_name: loxhuebridge
-        restart: always
-        network_mode: "host"
-        environment:
-          - TZ=Europe/Vienna
-        volumes:
-          - ./data:/app/data
-    ```
-
-3.  **Starten:**
     ```bash
-    docker compose up -d
+    git clone https://github.com/herdan75/loxhuebridge_mehrlampensteuerung.git
+    cd loxhuebridge_mehrlampensteuerung
     ```
-    *Der Ordner `data` wird automatisch erstellt und enthält deine Konfiguration (`config.json`), Mappings (`mapping.json`) und die Log-Datenbank (`logs.db`).*
 
-4.  **Setup:**
-    Öffne `http://<DEINE-IP>:8555` für den Einrichtungsassistenten.
+2. **Container bauen und starten:**
+
+    ```bash
+    docker compose up -d --build
+    ```
+
+3. **Setup öffnen:**
+
+    ```text
+    http://<DEINE-IP>:8555
+    ```
+
+Der Ordner `data` enthält deine Konfiguration (`config.json`), Mappings (`mapping.json`) und die Log-Datenbank (`logs.db`).
+
+---
+
+## 🐳 docker-compose.yml für diesen Fork
+
+```yaml
+services:
+  loxhuebridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: loxhuebridge-mehrlampensteuerung:local
+    container_name: loxhuebridge
+    restart: always
+    network_mode: "host"
+    environment:
+      - TZ=Europe/Vienna
+    volumes:
+      - ./data:/app/data
+```
+
+---
+
+## 🔄 Update dieses Forks
+
+```bash
+cd loxhuebridge_mehrlampensteuerung
+git pull
+docker compose up -d --build
+```
 
 ---
 
 ## 🛠 Manuelle Installation (Experten)
 
-Falls du kein Docker nutzen möchtest, benötigst du **Node.js 24** (oder neuer), da wir das native SQLite-Modul nutzen.
+Falls du kein Docker nutzen möchtest, benötigst du **Node.js 24** oder neuer.
 
 ```bash
-git clone https://github.com/bausi2k/loxhuebridge.git
-cd loxhuebridge
+git clone https://github.com/herdan75/loxhuebridge_mehrlampensteuerung.git
+cd loxhuebridge_mehrlampensteuerung
 npm install
 node server.js
-
 ```
+
+---
+
+## 💡 Mehrlampensynchronisierung verwenden
+
+Die Mehrlampensynchronisierung wird **pro Lampe** aktiviert. Nur aktivierte Lampen laufen in den gemeinsamen Ablauf.
+
+Empfohlene Einstellung für Ambient-Szenen mit mehreren einzelnen Hue-Lampen:
+
+```text
+[x] Sync
+[x] Hue Dynamics verwenden / Dynamics nicht ignorieren, falls weiche Übergänge gewünscht sind
+[x] Mehrlampensynchronisierung
+Sync-Offset: 0 ms
+```
+
+Danach testen und bei Bedarf pro Lampe feinjustieren:
+
+```text
+Lampe reagiert später  → Offset z. B. -30 ms oder -50 ms
+Lampe reagiert früher  → Offset z. B. +30 ms oder +50 ms
+```
+
+### Globale Multi-Sync Einstellungen
+
+Die Werte können über das Webinterface angepasst werden:
+
+| Einstellung | Empfehlung | Erklärung |
+| --- | ---: | --- |
+| Sammelfenster | 120 ms | Zeitfenster, in dem mehrere Loxone-Kommandos gesammelt werden |
+| Batchgröße | 4 | Anzahl Lampen, die pro Batch nahezu parallel gesendet werden |
+| Batch-Pause | 30 ms | Pause zwischen den Batches |
 
 ---
 
 ## 📡 MQTT Integration
 
 Die Bridge kann Statuswerte parallel an einen MQTT Broker senden.
-Die Konfiguration erfolgt im Web-Interface unter dem Tab **"System"**.
+Die Konfiguration erfolgt im Web-Interface unter dem Tab **System**.
 
 **Topic Struktur:**
-`prefix/typ/name/attribut`
+
+```text
+prefix/typ/name/attribut
+```
 
 **Beispiele:**
+
 | Gerät | Topic | Wert (Beispiel) |
 |---|---|---|
 | **Licht (Ein/Aus)** | `loxhue/light/kueche/on` | `1` / `0` |
@@ -115,40 +192,34 @@ Anstatt Befehle manuell einzutippen, kannst du deine konfigurierte loxHueBridge 
 ### Schritt 1: Vorlagen exportieren
 
 1. Öffne das **loxHueBridge Dashboard** (`http://<IP>:8555`).
-2. Klicke auf **"Auswählen / Exportieren"** (oben rechts bei "Aktiv").
+2. Klicke auf **Auswählen / Exportieren** oben rechts bei **Aktiv**.
 3. Wähle alle Geräte aus, die du in Loxone haben möchtest.
-4. Klicke auf **"📥 XML"**.
-* Mach das einmal im Tab **💡 Lichter** (speichert `lox_outputs.xml`).
-* Mach das einmal im Tab **📡 Sensoren** (speichert `lox_inputs.xml`).
-
-
+4. Klicke auf **📥 XML**.
+5. Exportiere einmal im Tab **💡 Lichter** und einmal im Tab **📡 Sensoren**.
 
 ### Schritt 2: Vorlagen in Loxone Config importieren
 
 1. Öffne **Loxone Config**.
 2. Klicke im Menüband oben auf den Tab **Miniserver**.
-3. Klicke auf den Button **Gerätevorlagen** und wähle **Vorlage importieren...**.
-4. Wähle die eben heruntergeladene XML-Datei aus.
-5. Wiederhole das für beide Dateien (Inputs und Outputs).
+3. Klicke auf **Gerätevorlagen** und wähle **Vorlage importieren...**.
+4. Wähle die heruntergeladene XML-Datei aus.
+5. Wiederhole das für Inputs und Outputs.
 
 ### Schritt 3: Geräte anlegen
 
 **Für Lichter (Virtuelle Ausgänge):**
 
 1. Klicke im Peripheriebaum auf **Virtuelle Ausgänge**.
-2. Klicke oben im Menüband auf **Vordefinierte Geräte**.
-3. Wähle im Dropdown **LoxHueBridge Lights**.
-4. Ein neuer Virtueller Ausgang mit all deinen Lampen wird erstellt.
+2. Klicke auf **Vordefinierte Geräte**.
+3. Wähle **LoxHueBridge Lights**.
 
 **Für Sensoren (Virtuelle UDP Eingänge):**
 
 1. Klicke im Peripheriebaum auf **Virtuelle UDP Eingänge**.
-2. Klicke oben im Menüband auf **Vordefinierte Geräte**.
-3. Wähle im Dropdown **LoxHueBridge Sensors**.
-4. Ein neuer UDP-Eingang mit all deinen Sensoren wird erstellt.
-* *Hinweis:* Kontrolliere, ob der **UDP Empfangsport** (Standard 7000) mit deiner loxHueBridge Einstellung übereinstimmt.
+2. Klicke auf **Vordefinierte Geräte**.
+3. Wähle **LoxHueBridge Sensors**.
 
-
+Hinweis: Kontrolliere, ob der UDP Empfangsport, Standard `7000`, mit deiner loxHueBridge Einstellung übereinstimmt.
 
 ---
 
@@ -159,13 +230,13 @@ Adresse: `http://<IP-DER-BRIDGE>:8555`
 
 | Funktion | Befehl bei EIN / Analog | Erklärung |
 | --- | --- | --- |
-| **Ausschalten** | `/kueche/<v>` | Schaltet aus (Wert 0) |
+| **Ausschalten** | `/kueche/<v>` | Schaltet aus bei Wert 0 |
 | **Dimmen** | `/kueche/<v>` | Werte 2-100 % |
-| **Warmweiß** | `/kueche/<v>` | Smart Actuator Logik (z.B. `201002700`) |
-| **RGB** | `/kueche/<v>` | RGB Logik (R + G*1000 + B*1000000) |
+| **Warmweiß** | `/kueche/<v>` | Smart Actuator Logik, z. B. `201002700` |
+| **RGB** | `/kueche/<v>` | RGB Logik: R + G*1000 + B*1000000 |
 
 **Sensoren (UDP Eingang):**
-Port: 7000 (Standard)
+Port: 7000, falls nicht geändert.
 
 | Typ | Befehlserkennung |
 | --- | --- |
@@ -179,13 +250,34 @@ Port: 7000 (Standard)
 
 ---
 
-## 🤝 Credits
+## 🧪 Prüfung
 
-**#kiassisted** 🤖
-This project was created with the assistance of AI.
-Code architecture, logic, and documentation support provided by Gemini.
+Syntaxprüfung lokal oder im Container:
+
+```bash
+node --check lib/hue.js
+node --check lib/config.js
+node --check lib/routes.js
+node --check public/app.js
+npm test
+```
+
+Logs prüfen:
+
+```bash
+docker logs -f loxhuebridge
+```
+
+Bei erfolgreichem SSE-Fix sollten die bisherigen EventStream-JSON-Fehler nicht mehr auftreten.
 
 ---
 
-<a href="https://www.buymeacoffee.com/bausi2k" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+## 🤝 Credits
 
+**#kiassisted** 🤖
+
+Dieses Projekt basiert auf dem Originalprojekt von **bausi2k** und wurde in diesem Fork um Mehrlampensynchronisierung und robustes SSE-Parsing erweitert.
+
+Originalprojekt: https://github.com/bausi2k/loxhuebridge
+
+<a href="https://www.buymeacoffee.com/bausi2k" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
