@@ -456,6 +456,73 @@ let currentTab = 'light';
         }
     }
 
+    function getMultiSyncFormSettings() {
+        const numberValue = (id, fallback) => {
+            const el = document.getElementById(id);
+            const value = el ? Number(el.value) : fallback;
+            return Number.isFinite(value) ? value : fallback;
+        };
+
+        return {
+            syncWindowMs: numberValue('sys_multiSyncWindowMs', 120),
+            batchSize: Math.max(1, numberValue('sys_multiBatchSize', 4)),
+            batchDelayMs: Math.max(0, numberValue('sys_multiBatchDelayMs', 30)),
+            maxCommandsPerSecond: Math.max(1, numberValue('sys_multiMaxCommandsPerSecond', 10))
+        };
+    }
+
+    function renderMultiSyncPreview() {
+        const el = document.getElementById('multiSyncPreview');
+        if (!el) return;
+
+        const settings = getMultiSyncFormSettings();
+        const items = mappings
+            .filter(m => m.hue_type === 'light' && m.multi_sync === true)
+            .map((entry, index) => {
+                const offset = Math.max(-500, Math.min(1000, Number(entry.sync_offset_ms) || 0));
+                const spacing = Math.ceil(1000 / settings.maxCommandsPerSecond);
+                const batchDelay = Math.floor(index / settings.batchSize) * settings.batchDelayMs;
+
+                return { entry, offset, spacing, batchDelay, index };
+            });
+
+        const activeLights = items.length;
+        const commandSpacingMs = Math.ceil(1000 / settings.maxCommandsPerSecond);
+        const baseDelayMs = activeLights ? Math.max(0, -Math.min(...items.map(item => item.offset))) : 0;
+        let lastDelay = -commandSpacingMs;
+        const delays = items
+            .map(item => ({
+                requestedDelay: Math.max(0, Math.round(baseDelayMs + item.offset + (item.index * commandSpacingMs) + item.batchDelay))
+            }))
+            .sort((a, b) => a.requestedDelay - b.requestedDelay)
+            .map(item => {
+                const delay = Math.max(item.requestedDelay, lastDelay + commandSpacingMs);
+                lastDelay = delay;
+                return delay;
+            });
+
+        const lastCommandMs = delays.length ? Math.max(...delays) : 0;
+        const totalMs = settings.syncWindowMs + lastCommandMs;
+        const effectiveRate = activeLights > 1 && lastCommandMs > 0
+            ? ((activeLights - 1) / (lastCommandMs / 1000)).toFixed(1)
+            : activeLights.toFixed(1);
+        const hint = settings.maxCommandsPerSecond <= 10
+            ? 'Hue-konservativ'
+            : (settings.maxCommandsPerSecond <= 25 ? 'Schnell testen' : 'Experimentell');
+
+        el.innerHTML = `
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:8px;">
+                <div><b>${activeLights}</b><br><span>aktive Lampen</span></div>
+                <div><b>${commandSpacingMs} ms</b><br><span>Mindestabstand</span></div>
+                <div><b>${Math.round(totalMs)} ms</b><br><span>bis letzter Befehl</span></div>
+                <div><b>${effectiveRate}/s</b><br><span>effektiv</span></div>
+            </div>
+            <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
+                Modus: ${hint}. Hue empfiehlt ca. 10 Lichtbefehle/s; hoehere Werte bitte schrittweise testen.
+            </div>
+        `;
+    }
+
     async function saveSettings() {
         const d = {};
         ['sys_loxIp', 'sys_loxPort', 'sys_mqttBroker', 'sys_mqttPort', 'sys_mqttUser', 'sys_mqttPass', 'sys_mqttPrefix'].forEach(id => d[id.replace('sys_','')] = document.getElementById(id).value);
@@ -465,6 +532,7 @@ let currentTab = 'light';
         d.multiSyncWindowMs = document.getElementById('sys_multiSyncWindowMs') ? document.getElementById('sys_multiSyncWindowMs').value : 120;
         d.multiBatchSize = document.getElementById('sys_multiBatchSize') ? document.getElementById('sys_multiBatchSize').value : 4;
         d.multiBatchDelayMs = document.getElementById('sys_multiBatchDelayMs') ? document.getElementById('sys_multiBatchDelayMs').value : 30;
+        d.multiMaxCommandsPerSecond = document.getElementById('sys_multiMaxCommandsPerSecond') ? document.getElementById('sys_multiMaxCommandsPerSecond').value : 10;
 
         d.debug = document.getElementById('sys_debug').checked;
         d.mqttEnabled = document.getElementById('sys_mqttEnabled').checked;
@@ -479,7 +547,8 @@ let currentTab = 'light';
                 multiLightControl: {
                     syncWindowMs: d.multiSyncWindowMs,
                     batchSize: d.multiBatchSize,
-                    batchDelayMs: d.multiBatchDelayMs
+                    batchDelayMs: d.multiBatchDelayMs,
+                    maxCommandsPerSecond: d.multiMaxCommandsPerSecond
                 }
             })});
             alert("Gespeichert!");
@@ -523,26 +592,42 @@ let currentTab = 'light';
                     <td>Sammelfenster</td>
                     <td>
                         <div class="slider-container">
-                            <input type="range" id="sys_multiSyncWindowMs" min="50" max="500" step="10" value="${v(s.multiLightControl?.syncWindowMs ?? 120)}" oninput="document.getElementById('val_multiSyncWindow').innerText = this.value + ' ms'">
+                            <input type="range" id="sys_multiSyncWindowMs" min="50" max="500" step="10" value="${v(s.multiLightControl?.syncWindowMs ?? 120)}" oninput="document.getElementById('val_multiSyncWindow').innerText = this.value + ' ms'; renderMultiSyncPreview();">
                             <span id="val_multiSyncWindow" class="slider-val">${v(s.multiLightControl?.syncWindowMs ?? 120)} ms</span>
                         </div>
                     </td>
                 </tr>
                 <tr>
                     <td>Batchgröße</td>
-                    <td><input type="number" id="sys_multiBatchSize" min="1" max="20" step="1" value="${v(s.multiLightControl?.batchSize ?? 4)}"></td>
+                    <td><input type="number" id="sys_multiBatchSize" min="1" max="20" step="1" value="${v(s.multiLightControl?.batchSize ?? 4)}" oninput="renderMultiSyncPreview()"></td>
                 </tr>
                 <tr>
                     <td>Batch-Pause</td>
                     <td>
                         <div class="slider-container">
-                            <input type="range" id="sys_multiBatchDelayMs" min="0" max="300" step="10" value="${v(s.multiLightControl?.batchDelayMs ?? 30)}" oninput="document.getElementById('val_multiBatchDelay').innerText = this.value + ' ms'">
+                            <input type="range" id="sys_multiBatchDelayMs" min="0" max="300" step="10" value="${v(s.multiLightControl?.batchDelayMs ?? 30)}" oninput="document.getElementById('val_multiBatchDelay').innerText = this.value + ' ms'; renderMultiSyncPreview();">
                             <span id="val_multiBatchDelay" class="slider-val">${v(s.multiLightControl?.batchDelayMs ?? 30)} ms</span>
                         </div>
                         <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Gilt nur für Lampen mit aktivierter Mehrlampensynchronisierung.</div>
                     </td>
                 </tr>
-                
+                <tr>
+                    <td>Max. Lichtbefehle/s</td>
+                    <td>
+                        <div class="slider-container">
+                            <input type="range" id="sys_multiMaxCommandsPerSecond" min="1" max="50" step="1" value="${v(s.multiLightControl?.maxCommandsPerSecond ?? 10)}" oninput="document.getElementById('val_multiMaxRate').innerText = this.value + ' /s'; renderMultiSyncPreview();">
+                            <span id="val_multiMaxRate" class="slider-val">${v(s.multiLightControl?.maxCommandsPerSecond ?? 10)} /s</span>
+                        </div>
+                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">10/s entspricht der Hue-Empfehlung. Hoehere Werte vorsichtig je Lampenmenge testen.</div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Timing-Test</td>
+                    <td>
+                        <div id="multiSyncPreview" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div>
+                    </td>
+                </tr>
+
                 <tr><td>Debug Modus</td><td><input type="checkbox" id="sys_debug" ${s.debug?'checked':''}></td></tr>
                 <tr>
                     <td>SD-Card Mode</td>
@@ -560,6 +645,7 @@ let currentTab = 'light';
                 <tr><td>Passwort</td><td><input type="password" id="sys_mqttPass" value="${v(s.mqttPass)}"></td></tr>
                 <tr><td>Prefix</td><td><input id="sys_mqttPrefix" value="${v(s.mqttPrefix)||'loxhue'}"></td></tr>
             `;
+            renderMultiSyncPreview();
         } catch(e){ console.error("Fehler bei loadSettings:", e); }
     }
 

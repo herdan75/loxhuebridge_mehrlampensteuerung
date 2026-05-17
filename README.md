@@ -22,6 +22,8 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
     * sinnvoller Bereich: ca. -500 ms bis +1000 ms
 * **Sammelfenster für gleichzeitige Szenen:** Mehrere Loxone-Kommandos werden kurz gesammelt und dann gebündelt an die Hue Bridge gesendet.
 * **Batch-Steuerung:** Mehrere Lampen werden in kleinen Gruppen nahezu parallel gesendet, ohne die Hue Bridge unnötig zu überlasten.
+* **Einstellbares Hue-Limit:** Die maximale Anzahl Lichtbefehle pro Sekunde kann angepasst werden, um je nach Lampenanzahl das schnellste stabile Limit der eigenen Bridge zu finden.
+* **Timing-Test im UI:** Das Webinterface zeigt für die aktivierten Multi-Sync-Lampen Lampenanzahl, Mindestabstand, geschätzte Gesamtdauer und effektive Befehlsrate.
 * **Queue-Bypass nur für Multi-Sync-Lampen:** Die bestehende Queue bleibt für normale Lampen erhalten. Nur Lampen mit aktivierter Mehrlampensynchronisierung nutzen den neuen Ablauf.
 * **Robuster SSE/EventStream Parser:** Behebt sporadische Fehler wie:
     * `Unexpected end of JSON input`
@@ -159,6 +161,9 @@ Die Werte können über das Webinterface angepasst werden:
 | Sammelfenster | 120 ms | Zeitfenster, in dem mehrere Loxone-Kommandos gesammelt werden |
 | Batchgröße | 4 | Anzahl Lampen, die pro Batch nahezu parallel gesendet werden |
 | Batch-Pause | 30 ms | Pause zwischen den Batches |
+| Max. Lichtbefehle/s | 10 | Hue-konservativer Startwert. Für die eigene Bridge schrittweise erhöhen, z. B. 15, 20, 25/s |
+
+Der Timing-Test im Webinterface hilft beim Abstimmen: Je mehr Lampen gleichzeitig aktiv sind, desto wichtiger ist der Mindestabstand zwischen REST-Befehlen. Wenn die Bridge stabil bleibt, können höhere Werte getestet werden. Bei 429-Fehlern, verzögerten Reaktionen oder nicht sauber gesetzten Farben den Wert wieder reduzieren.
 
 ---
 

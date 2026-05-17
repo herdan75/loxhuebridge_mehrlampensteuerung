@@ -4,7 +4,7 @@ const assert = require('node:assert');
 // Da executeAlert, executeEffect und executeTimedEffect Netzwerkcalls machen,
 // testen wir die Effekt-Keyword-Logik und die Math-Funktionen isoliert.
 const { _internals } = require('../lib/hue');
-const { kelvinToMirek, rgbToHex, rgbToXy, mirekToHex, xyToHex, hueLightToLux, mapRange, appendEventStreamChunk, extractSseData } = _internals;
+const { kelvinToMirek, rgbToHex, rgbToXy, mirekToHex, xyToHex, hueLightToLux, mapRange, appendEventStreamChunk, extractSseData, buildMultiSyncSchedule } = _internals;
 
 // --- Farb-Mathematik ---
 test('kelvinToMirek: Standard-Werte', () => {
@@ -82,6 +82,49 @@ test('SSE Parser verarbeitet CRLF und mehrzeilige data Felder', () => {
     const parsed = appendEventStreamChunk('', chunk);
     assert.strictEqual(parsed.rawEvents.length, 1);
     assert.strictEqual(extractSseData(parsed.rawEvents[0]), '{"a":1,\n"b":2}');
+});
+
+// --- Mehrlampensynchronisierung ---
+test('Multi-Sync Scheduler respektiert maximale Hue Befehlsrate', () => {
+    const items = Array.from({ length: 11 }, (_, index) => ({
+        entry: { loxone_name: `lampe_${index}`, sync_offset_ms: 0 }
+    }));
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 4,
+        batchDelayMs: 30,
+        maxCommandsPerSecond: 10
+    });
+
+    assert.strictEqual(schedule.length, 11);
+
+    for (let i = 1; i < schedule.length; i++) {
+        assert.ok(
+            schedule[i].delayMs - schedule[i - 1].delayMs >= 100,
+            `Abstand ${i} war ${schedule[i].delayMs - schedule[i - 1].delayMs}ms`
+        );
+    }
+});
+
+test('Multi-Sync Scheduler erlaubt schnellere experimentelle Rate kontrolliert', () => {
+    const items = Array.from({ length: 11 }, (_, index) => ({
+        entry: { loxone_name: `lampe_${index}`, sync_offset_ms: 0 }
+    }));
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 4,
+        batchDelayMs: 30,
+        maxCommandsPerSecond: 25
+    });
+
+    for (let i = 1; i < schedule.length; i++) {
+        assert.ok(
+            schedule[i].delayMs - schedule[i - 1].delayMs >= 40,
+            `Abstand ${i} war ${schedule[i].delayMs - schedule[i - 1].delayMs}ms`
+        );
+    }
 });
 
 // --- Effekt-Keyword-Validierung ---
