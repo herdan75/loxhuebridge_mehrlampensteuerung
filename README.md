@@ -2,7 +2,7 @@
 
 **loxHueBridge** ist eine bidirektionale Schnittstelle zwischen dem **Loxone Miniserver**, der **Philips Hue Bridge (V2 / API)** und optional **MQTT**.
 
-Dieser Fork erweitert loxHueBridge um eine **Mehrlampensynchronisierung pro Lampe** und behebt das **robuste SSE/EventStream Parsing** bei großen Hue Events.
+Dieser Fork erweitert loxHueBridge um eine **gruppierte Mehrlampensynchronisierung pro Lampe** und behebt das **robuste SSE/EventStream Parsing** bei großen Hue Events.
 
 Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung und nutzt die moderne Hue Event-Schnittstelle (SSE), um Statusänderungen in Echtzeit an Loxone (UDP) und MQTT Broker zurückzumelden.
 
@@ -11,11 +11,15 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.4.0 Mehrlampensteuerung
+## 🚀 Features V2.5.0-dev Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
 * **Mehrlampensynchronisierung pro Lampe:** Einzelne Hue-Lampen können gezielt in einen gemeinsamen Sammel-/Batch-Ablauf aufgenommen werden.
+* **Multi-Sync Gruppen A-E:** Lampen können einer von fünf neutralen Gruppen zugeordnet werden, z. B. für Wohnzimmer, Büro oder Küche.
+* **Freie Gruppennamen:** Gruppe A-E können im Systembereich individuell benannt werden.
+* **Eigene Einstellungen pro Gruppe:** Sammelfenster, Batchgröße, Batch-Pause, Lichtbefehle/s und Timing-Test sind pro Gruppe separat einstellbar.
+* **Globale Bridge-Sicherheitsgrenze:** `Max. Bridge-Befehle/s` begrenzt die Gesamtlast über alle Gruppen hinweg, falls mehrere Räume gleichzeitig schalten.
 * **Sync-Offset pro Lampe:** Jede Lampe kann zeitlich feinjustiert werden.
     * negativer Offset = früher senden
     * positiver Offset = später senden

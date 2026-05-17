@@ -1,3 +1,19 @@
+## [2.5.0-dev] - 2026-05-18
+### New Features
+- **Gruppierte Mehrlampensynchronisierung:** Einzelne Hue-Lampen koennen jetzt einer von fuenf neutralen Multi-Sync-Gruppen A-E zugeordnet werden. Damit lassen sich mehrere Raeume oder Lampenbereiche unabhaengig voneinander abstimmen.
+- **Freie Gruppennamen:** Die Gruppen A-E koennen im Systembereich individuell benannt werden, z. B. Wohnzimmer, Buero oder Kueche.
+- **Eigene Gruppen-Settings:** Jede Gruppe hat eigene Werte fuer Sammelfenster, Batchgroesse, Batch-Pause und maximale Lichtbefehle pro Sekunde.
+- **Timing-Test pro Gruppe:** Die Simulation zeigt je Gruppe aktive Lampen, Mindestabstand, geschaetzte Zeit bis zum letzten Befehl und effektive Befehlsrate.
+- **Globale Bridge-Sicherheitsgrenze:** `Max. Bridge-Befehle/s` begrenzt die Gesamtlast ueber alle Multi-Sync-Gruppen hinweg, damit gleichzeitig ausloesende Raeume die Hue Bridge nicht gemeinsam ueberlasten.
+
+### Verbesserungen
+- **Rueckwaertskompatibilitaet:** Bestehende Lampen mit aktivierter Mehrlampensynchronisierung, aber ohne Gruppenzuordnung, laufen automatisch in Gruppe A weiter.
+- **Normale Lampen bleiben unveraendert:** Lampen ohne aktivierte Mehrlampensynchronisierung laufen weiterhin ueber die normale Queue/Drosselung ausserhalb des Multi-Sync-Ablaufs.
+- **README erweitert:** Gruppenlogik, Gruppenzuordnung, Timing-Test und Bridge-Gesamtlimit sind dokumentiert.
+
+### Tests
+- Zusaetzlicher Test prueft, dass die Multi-Sync Preview Lampen korrekt nach Gruppe trennt und Hue-Gruppen nicht in den Einzel-Lampen-Sync einbezieht.
+
 ## [2.4.0] - 2026-05-15
 ### 🌟 New Features
 - **Mehrlampensynchronisierung pro Lampe:** Lampen können einzeln für einen gemeinsamen Sammel-/Batch-Ablauf aktiviert werden. Dadurch lassen sich mehrere einzeln angesteuerte Hue-Lampen bei Ambient-Szenen deutlich synchroner starten.
