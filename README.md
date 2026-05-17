@@ -134,18 +134,27 @@ node server.js
 
 ## 💡 Mehrlampensynchronisierung verwenden
 
-Die Mehrlampensynchronisierung wird **pro Lampe** aktiviert. Nur aktivierte Lampen laufen in den gemeinsamen Ablauf.
+Die Mehrlampensynchronisierung wird **pro einzelner Hue-Lampe** aktiviert. Nur Lampen mit aktivierter Option **Mehrlampensynchronisierung** laufen in den gemeinsamen Sammel-/Timing-Ablauf. Hue Gruppen, Räume und Zonen werden nicht in diesen Ablauf aufgenommen, weil sie über `grouped_light` bereits als ein Bridge-Befehl gesteuert werden.
 
 Empfohlene Einstellung für Ambient-Szenen mit mehreren einzelnen Hue-Lampen:
 
 ```text
 [x] Sync
-[x] Hue Dynamics verwenden / Dynamics nicht ignorieren, falls weiche Übergänge gewünscht sind
+[ ] Dynamics ignorieren, falls weiche Übergänge gewünscht sind
 [x] Mehrlampensynchronisierung
 Sync-Offset: 0 ms
 ```
 
-Danach testen und bei Bedarf pro Lampe feinjustieren:
+### Einstellungen pro Lampe
+
+| Einstellung | Wirkung |
+| --- | --- |
+| Loxone Sync | Statusänderungen dieser Lampe werden per UDP an Loxone zurückgemeldet |
+| Dynamics ignorieren | Sendet Hue-Befehle ohne `dynamics.duration`. Das ist sinnvoll für reine Schaltaktoren oder wenn ein Gerät mit Hue Dynamics Probleme macht |
+| Mehrlampensynchronisierung | Diese einzelne Lampe nimmt am gemeinsamen Sammel-/Timing-Ablauf teil |
+| Sync-Offset | Feinjustierung nur für diese Lampe. Negativ = früher, positiv = später |
+
+Den Sync-Offset erst nach einem Testlauf anpassen:
 
 ```text
 Lampe reagiert später  → Offset z. B. -30 ms oder -50 ms
@@ -159,11 +168,35 @@ Die Werte können über das Webinterface angepasst werden:
 | Einstellung | Empfehlung | Erklärung |
 | --- | ---: | --- |
 | Sammelfenster | 120 ms | Zeitfenster, in dem mehrere Loxone-Kommandos gesammelt werden |
-| Batchgröße | 4 | Anzahl Lampen, die pro Batch nahezu parallel gesendet werden |
-| Batch-Pause | 30 ms | Pause zwischen den Batches |
+| Batchgröße | 4-10 | Anzahl Lampen pro logischem Block. Der Wert beeinflusst die zusätzliche Batch-Pause, die maximale Befehlsrate bleibt aber die wichtigste Grenze |
+| Batch-Pause | 30 ms | Zusätzliche Pause nach jedem Batch. Hilft, wenn die Bridge bei großen Gruppen kurz ins Stolpern kommt |
 | Max. Lichtbefehle/s | 10 | Hue-konservativer Startwert. Für die eigene Bridge schrittweise erhöhen, z. B. 15, 20, 25/s |
 
-Der Timing-Test im Webinterface hilft beim Abstimmen: Je mehr Lampen gleichzeitig aktiv sind, desto wichtiger ist der Mindestabstand zwischen REST-Befehlen. Wenn die Bridge stabil bleibt, können höhere Werte getestet werden. Bei 429-Fehlern, verzögerten Reaktionen oder nicht sauber gesetzten Farben den Wert wieder reduzieren.
+### Timing-Test / Simulation lesen
+
+Der Bereich **Timing-Test** im Webinterface simuliert den Ablauf für alle aktuell aktivierten Multi-Sync-Lampen:
+
+| Anzeige | Bedeutung |
+| --- | --- |
+| aktive Lampen | Anzahl einzelner Hue-Lampen mit aktivierter Mehrlampensynchronisierung |
+| Mindestabstand | rechnerischer Abstand zwischen zwei REST-Befehlen, abgeleitet aus `Max. Lichtbefehle/s` |
+| bis letzter Befehl | geschätzte Zeit vom Auslösen bis zum letzten gesendeten Lampenbefehl |
+| effektiv | effektive Befehlsrate des geplanten Ablaufs |
+
+Beispiel mit 10 aktiven Lampen, `Sammelfenster 120 ms`, `Batchgröße 10`, `Batch-Pause 30 ms`, `Max. Lichtbefehle/s 10`: Der Mindestabstand beträgt 100 ms und der letzte Befehl wird nach ca. 1020 ms gesendet. Das ist Hue-konservativ. Mit 20/s sinkt der Mindestabstand auf 50 ms und derselbe Ablauf wirkt deutlich zeitnäher.
+
+### Praxiswerte zum Finden des Limits
+
+Für 10-11 einzelne Lampen:
+
+```text
+Start:       20/s
+Wenn stabil: 25/s
+Optional:    30/s
+Bei Problemen: zurück auf 20/s oder 15/s
+```
+
+Typische Zeichen für ein zu hohes Limit sind 429-Fehler im Log, einzelne Lampen reagieren spürbar später, Farben werden nicht sauber übernommen oder der EventStream meldet auffällig viele Folgeupdates. In diesem Fall `Max. Lichtbefehle/s` reduzieren oder die Batch-Pause erhöhen.
 
 ---
 
