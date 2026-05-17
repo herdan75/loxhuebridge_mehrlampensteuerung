@@ -4,7 +4,7 @@ const assert = require('node:assert');
 // Da executeAlert, executeEffect und executeTimedEffect Netzwerkcalls machen,
 // testen wir die Effekt-Keyword-Logik und die Math-Funktionen isoliert.
 const { _internals } = require('../lib/hue');
-const { kelvinToMirek, rgbToHex, rgbToXy, mirekToHex, xyToHex, hueLightToLux, mapRange } = _internals;
+const { kelvinToMirek, rgbToHex, rgbToXy, mirekToHex, xyToHex, hueLightToLux, mapRange, appendEventStreamChunk, extractSseData } = _internals;
 
 // --- Farb-Mathematik ---
 test('kelvinToMirek: Standard-Werte', () => {
@@ -61,6 +61,27 @@ test('mapRange: Lineare Interpolation', () => {
     assert.strictEqual(mapRange(50, 0, 100, 0, 200), 100);
     assert.strictEqual(mapRange(0, 0, 100, 0, 200), 0);
     assert.strictEqual(mapRange(100, 0, 100, 0, 200), 200);
+});
+
+// --- SSE/EventStream Parsing ---
+test('SSE Parser puffert fragmentierte JSON Payloads bis zur Leerzeile', () => {
+    const first = appendEventStreamChunk('', Buffer.from('data: [{"type":"update","data":[{"id":"1","on":{"on":tr'));
+    assert.deepStrictEqual(first.rawEvents, []);
+    assert.ok(first.remaining.length > 0);
+
+    const second = appendEventStreamChunk(first.remaining, Buffer.from('ue}}]}]\n\n'));
+    assert.strictEqual(second.remaining, '');
+    assert.strictEqual(second.rawEvents.length, 1);
+
+    const payload = extractSseData(second.rawEvents[0]);
+    assert.deepStrictEqual(JSON.parse(payload), [{ type: 'update', data: [{ id: '1', on: { on: true } }] }]);
+});
+
+test('SSE Parser verarbeitet CRLF und mehrzeilige data Felder', () => {
+    const chunk = Buffer.from('event: update\r\ndata: {"a":1,\r\ndata: "b":2}\r\n\r\n');
+    const parsed = appendEventStreamChunk('', chunk);
+    assert.strictEqual(parsed.rawEvents.length, 1);
+    assert.strictEqual(extractSseData(parsed.rawEvents[0]), '{"a":1,\n"b":2}');
 });
 
 // --- Effekt-Keyword-Validierung ---
