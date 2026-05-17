@@ -8,6 +8,8 @@ let currentTab = 'light';
     let currentLogFilter = 'ALL';
     let cachedLogs = [];
     let searchTimeout = null; 
+    const MULTI_SYNC_GROUP_IDS = ['a', 'b', 'c', 'd', 'e'];
+    let multiLightControlSettings = { groups: MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}` })) };
 
     function debugLog(msg) { console.log(`[UI] ${msg}`); }
 
@@ -15,6 +17,7 @@ let currentTab = 'light';
         debugLog("Init...");
         await loadTargets();
         await loadMappings();
+        loadMultiSyncSettingsCache();
         loadDetected(); 
         loadStatus();
         setInterval(loadDetected, 3000);
@@ -396,6 +399,12 @@ let currentTab = 'light';
     async function loadTargets() { try { targets = await (await fetch('/api/targets')).json(); if(currentTab!=='system') renderDropdown(); } catch(e){ console.error("Fehler bei loadTargets:", e); } }
     async function loadMappings() { try { mappings = await (await fetch('/api/mapping')).json(); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadMappings:", e); } }
     async function loadStatus() { try { status = await (await fetch('/api/status')).json(); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadStatus:", e); } }
+    async function loadMultiSyncSettingsCache() {
+        try {
+            const s = await (await fetch('/api/settings')).json();
+            multiLightControlSettings = s.multiLightControl || multiLightControlSettings;
+        } catch(e) { console.error("Fehler bei loadMultiSyncSettingsCache:", e); }
+    }
     
     function renderDropdown() {
         const select = document.getElementById('hueTarget');
@@ -456,71 +465,134 @@ let currentTab = 'light';
         }
     }
 
-    function getMultiSyncFormSettings() {
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function getMultiSyncFormSettings(groupId = 'a') {
         const numberValue = (id, fallback) => {
             const el = document.getElementById(id);
             const value = el ? Number(el.value) : fallback;
             return Number.isFinite(value) ? value : fallback;
         };
+        const nameEl = document.getElementById(`sys_multiName_${groupId}`);
+        const defaultName = `Gruppe ${groupId.toUpperCase()}`;
 
         return {
-            syncWindowMs: numberValue('sys_multiSyncWindowMs', 120),
-            batchSize: Math.max(1, numberValue('sys_multiBatchSize', 4)),
-            batchDelayMs: Math.max(0, numberValue('sys_multiBatchDelayMs', 30)),
-            maxCommandsPerSecond: Math.max(1, numberValue('sys_multiMaxCommandsPerSecond', 10))
+            id: groupId,
+            name: nameEl && nameEl.value.trim() ? nameEl.value.trim() : defaultName,
+            syncWindowMs: numberValue(`sys_multiSyncWindowMs_${groupId}`, 120),
+            batchSize: Math.max(1, numberValue(`sys_multiBatchSize_${groupId}`, 4)),
+            batchDelayMs: Math.max(0, numberValue(`sys_multiBatchDelayMs_${groupId}`, 30)),
+            maxCommandsPerSecond: Math.max(1, numberValue(`sys_multiMaxCommandsPerSecond_${groupId}`, 10))
         };
     }
 
-    function renderMultiSyncPreview() {
-        const el = document.getElementById('multiSyncPreview');
-        if (!el) return;
+    function getBridgeMaxCommandsPerSecondFromForm() {
+        const el = document.getElementById('sys_multiBridgeMaxCommandsPerSecond');
+        const value = el ? Number(el.value) : 30;
+        return Number.isFinite(value) ? Math.max(1, value) : 30;
+    }
 
-        const settings = getMultiSyncFormSettings();
-        const items = mappings
-            .filter(m => m.hue_type === 'light' && m.multi_sync === true)
-            .map((entry, index) => {
-                const offset = Math.max(-500, Math.min(1000, Number(entry.sync_offset_ms) || 0));
-                const spacing = Math.ceil(1000 / settings.maxCommandsPerSecond);
-                const batchDelay = Math.floor(index / settings.batchSize) * settings.batchDelayMs;
+    function renderMultiSyncPreview(groupId = null) {
+        const ids = groupId ? [groupId] : MULTI_SYNC_GROUP_IDS;
 
-                return { entry, offset, spacing, batchDelay, index };
-            });
+        ids.forEach(id => {
+            const el = document.getElementById(`multiSyncPreview_${id}`);
+            if (!el) return;
 
-        const activeLights = items.length;
-        const commandSpacingMs = Math.ceil(1000 / settings.maxCommandsPerSecond);
-        const baseDelayMs = activeLights ? Math.max(0, -Math.min(...items.map(item => item.offset))) : 0;
-        let lastDelay = -commandSpacingMs;
-        const delays = items
-            .map(item => ({
-                requestedDelay: Math.max(0, Math.round(baseDelayMs + item.offset + (item.index * commandSpacingMs) + item.batchDelay))
-            }))
-            .sort((a, b) => a.requestedDelay - b.requestedDelay)
-            .map(item => {
-                const delay = Math.max(item.requestedDelay, lastDelay + commandSpacingMs);
-                lastDelay = delay;
-                return delay;
-            });
+            const settings = getMultiSyncFormSettings(id);
+            const items = mappings
+                .filter(m => m.hue_type === 'light' && m.multi_sync === true && (m.multi_sync_group || 'a') === id)
+                .map((entry, index) => {
+                    const offset = Math.max(-500, Math.min(1000, Number(entry.sync_offset_ms) || 0));
+                    const batchDelay = Math.floor(index / settings.batchSize) * settings.batchDelayMs;
 
-        const lastCommandMs = delays.length ? Math.max(...delays) : 0;
-        const totalMs = settings.syncWindowMs + lastCommandMs;
-        const effectiveRate = activeLights > 1 && lastCommandMs > 0
-            ? ((activeLights - 1) / (lastCommandMs / 1000)).toFixed(1)
-            : activeLights.toFixed(1);
-        const hint = settings.maxCommandsPerSecond <= 10
-            ? 'Hue-konservativ'
-            : (settings.maxCommandsPerSecond <= 25 ? 'Schnell testen' : 'Experimentell');
+                    return { entry, offset, batchDelay, index };
+                });
 
-        el.innerHTML = `
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:8px;">
-                <div><b>${activeLights}</b><br><span>aktive Lampen</span></div>
-                <div><b>${commandSpacingMs} ms</b><br><span>Mindestabstand</span></div>
-                <div><b>${Math.round(totalMs)} ms</b><br><span>bis letzter Befehl</span></div>
-                <div><b>${effectiveRate}/s</b><br><span>effektiv</span></div>
-            </div>
-            <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
-                Modus: ${hint}. Hue empfiehlt ca. 10 Lichtbefehle/s; hoehere Werte bitte schrittweise testen.
-            </div>
+            const activeLights = items.length;
+            const commandSpacingMs = Math.ceil(1000 / settings.maxCommandsPerSecond);
+            const baseDelayMs = activeLights ? Math.max(0, -Math.min(...items.map(item => item.offset))) : 0;
+            let lastDelay = -commandSpacingMs;
+            const delays = items
+                .map(item => ({
+                    requestedDelay: Math.max(0, Math.round(baseDelayMs + item.offset + (item.index * commandSpacingMs) + item.batchDelay))
+                }))
+                .sort((a, b) => a.requestedDelay - b.requestedDelay)
+                .map(item => {
+                    const delay = Math.max(item.requestedDelay, lastDelay + commandSpacingMs);
+                    lastDelay = delay;
+                    return delay;
+                });
+
+            const lastCommandMs = delays.length ? Math.max(...delays) : 0;
+            const totalMs = settings.syncWindowMs + lastCommandMs;
+            const effectiveRate = activeLights > 1 && lastCommandMs > 0
+                ? ((activeLights - 1) / (lastCommandMs / 1000)).toFixed(1)
+                : activeLights.toFixed(1);
+            const hint = settings.maxCommandsPerSecond <= 10
+                ? 'Hue-konservativ'
+                : (settings.maxCommandsPerSecond <= 25 ? 'Schnell testen' : 'Experimentell');
+
+            el.innerHTML = `
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap:8px;">
+                    <div><b>${activeLights}</b><br><span>aktive Lampen</span></div>
+                    <div><b>${commandSpacingMs} ms</b><br><span>Mindestabstand</span></div>
+                    <div><b>${Math.round(totalMs)} ms</b><br><span>bis letzter Befehl</span></div>
+                    <div><b>${effectiveRate}/s</b><br><span>effektiv</span></div>
+                </div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
+                    Modus: ${hint}. Globale Bridge-Grenze: ${getBridgeMaxCommandsPerSecondFromForm()}/s.
+                </div>
+            `;
+        });
+    }
+
+    function renderMultiSyncGroupRows(settings) {
+        const cfg = settings || {};
+        const groups = cfg.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}`, syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 10 }));
+        let html = `
+            <tr>
+                <td>Max. Bridge-Befehle/s</td>
+                <td>
+                    <div class="slider-container">
+                        <input type="range" id="sys_multiBridgeMaxCommandsPerSecond" min="1" max="100" step="1" value="${cfg.bridgeMaxCommandsPerSecond ?? 30}" oninput="document.getElementById('val_multiBridgeMaxRate').innerText = this.value + ' /s'; renderMultiSyncPreview();">
+                        <span id="val_multiBridgeMaxRate" class="slider-val">${cfg.bridgeMaxCommandsPerSecond ?? 30} /s</span>
+                    </div>
+                    <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Sicherheitsgrenze ueber alle Multi-Sync-Gruppen hinweg.</div>
+                </td>
+            </tr>
         `;
+
+        groups.forEach(group => {
+            const id = group.id;
+            const label = `Gruppe ${id.toUpperCase()}`;
+            html += `
+                <tr>
+                    <td colspan="2">
+                        <details style="border:1px solid var(--border); border-radius:6px; padding:10px; background:#fafafa;" ${id === 'a' ? 'open' : ''}>
+                            <summary style="cursor:pointer; font-weight:bold;">${escapeHtml(group.name || label)}</summary>
+                            <table class="settings-table" style="margin-top:10px;">
+                                <tr><td>Name</td><td><input id="sys_multiName_${id}" value="${escapeHtml(group.name || label)}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
+                                <tr><td>Sammelfenster</td><td><div class="slider-container"><input type="range" id="sys_multiSyncWindowMs_${id}" min="50" max="500" step="10" value="${group.syncWindowMs ?? 120}" oninput="document.getElementById('val_multiSyncWindow_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSyncWindow_${id}" class="slider-val">${group.syncWindowMs ?? 120} ms</span></div></td></tr>
+                                <tr><td>Batchgroesse</td><td><input type="number" id="sys_multiBatchSize_${id}" min="1" max="20" step="1" value="${group.batchSize ?? 4}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
+                                <tr><td>Batch-Pause</td><td><div class="slider-container"><input type="range" id="sys_multiBatchDelayMs_${id}" min="0" max="300" step="10" value="${group.batchDelayMs ?? 30}" oninput="document.getElementById('val_multiBatchDelay_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiBatchDelay_${id}" class="slider-val">${group.batchDelayMs ?? 30} ms</span></div></td></tr>
+                                <tr><td>Max. Lichtbefehle/s</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
+                                <tr><td>Timing-Test</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
+                            </table>
+                        </details>
+                    </td>
+                </tr>
+            `;
+        });
+
+        return html;
     }
 
     async function saveSettings() {
@@ -529,10 +601,8 @@ let currentTab = 'light';
         
         d.transitionTime = document.getElementById('sys_transition').value;
         d.throttleTime = document.getElementById('sys_throttle').value;
-        d.multiSyncWindowMs = document.getElementById('sys_multiSyncWindowMs') ? document.getElementById('sys_multiSyncWindowMs').value : 120;
-        d.multiBatchSize = document.getElementById('sys_multiBatchSize') ? document.getElementById('sys_multiBatchSize').value : 4;
-        d.multiBatchDelayMs = document.getElementById('sys_multiBatchDelayMs') ? document.getElementById('sys_multiBatchDelayMs').value : 30;
-        d.multiMaxCommandsPerSecond = document.getElementById('sys_multiMaxCommandsPerSecond') ? document.getElementById('sys_multiMaxCommandsPerSecond').value : 10;
+        d.multiBridgeMaxCommandsPerSecond = getBridgeMaxCommandsPerSecondFromForm();
+        d.multiGroups = MULTI_SYNC_GROUP_IDS.map(id => getMultiSyncFormSettings(id));
 
         d.debug = document.getElementById('sys_debug').checked;
         d.mqttEnabled = document.getElementById('sys_mqttEnabled').checked;
@@ -545,10 +615,8 @@ let currentTab = 'light';
                 mqttEnabled: d.mqttEnabled, mqttBroker: d.mqttBroker, mqttPort: d.mqttPort, mqttUser: d.mqttUser, mqttPass: d.mqttPass, mqttPrefix: d.mqttPrefix,
                 disableLogDisk: d.disableLogDisk,
                 multiLightControl: {
-                    syncWindowMs: d.multiSyncWindowMs,
-                    batchSize: d.multiBatchSize,
-                    batchDelayMs: d.multiBatchDelayMs,
-                    maxCommandsPerSecond: d.multiMaxCommandsPerSecond
+                    bridgeMaxCommandsPerSecond: d.multiBridgeMaxCommandsPerSecond,
+                    groups: d.multiGroups
                 }
             })});
             alert("Gespeichert!");
@@ -559,6 +627,7 @@ let currentTab = 'light';
     async function loadSettings() {
         try {
             const s = await (await fetch('/api/settings')).json();
+            multiLightControlSettings = s.multiLightControl || multiLightControlSettings;
             const table = document.getElementById('settingsTable');
             const v = (val) => val !== undefined ? val : '';
             
@@ -588,6 +657,8 @@ let currentTab = 'light';
                 </tr>
 
                 <tr><td colspan="2" style="background:#eee;font-weight:bold">Mehrlampensynchronisierung</td></tr>
+                ${renderMultiSyncGroupRows(s.multiLightControl)}
+                <!-- legacy single-group controls disabled by grouped scheduler
                 <tr>
                     <td>Sammelfenster</td>
                     <td>
@@ -627,6 +698,7 @@ let currentTab = 'light';
                         <div id="multiSyncPreview" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div>
                     </td>
                 </tr>
+                -->
 
                 <tr><td>Debug Modus</td><td><input type="checkbox" id="sys_debug" ${s.debug?'checked':''}></td></tr>
                 <tr>
@@ -665,6 +737,9 @@ let currentTab = 'light';
             const isStrictOnOff = entry.hue_type === 'light' && !supportsDimming;
             const ignoreDyn = isStrictOnOff ? true : !!entry.ignore_dynamics;
             const disableIgnoreDyn = isStrictOnOff ? 'disabled' : '';
+            const groupOptions = (multiLightControlSettings.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}` })))
+                .map(group => `<option value="${group.id}" ${(entry.multi_sync_group || 'a') === group.id ? 'selected' : ''}>${escapeHtml(group.name || `Gruppe ${group.id.toUpperCase()}`)}</option>`)
+                .join('');
 
             content += `
                 <h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">⚙️ Einstellungen</h3>
@@ -694,6 +769,12 @@ let currentTab = 'light';
                     </label>
                     <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">
                         Nimmt diese Lampe in den gemeinsamen Sammel-/Batch-Ablauf auf. Nur einzelne Hue-Lampen werden hier synchronisiert, keine Gruppen.
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-left:24px; margin-top:10px;">
+                        <span style="font-size:0.85rem; color:var(--text-muted); min-width:90px;">Gruppe</span>
+                        <select onchange="updateMappingSetting('${loxoneName}', 'multi_sync_group', this.value)" style="max-width:180px;">
+                            ${groupOptions}
+                        </select>
                     </div>
                     <div style="display:flex; align-items:center; gap:10px; margin-left:24px; margin-top:10px;">
                         <span style="font-size:0.85rem; color:var(--text-muted); min-width:90px;">Sync-Offset</span>

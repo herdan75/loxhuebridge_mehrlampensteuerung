@@ -1,9 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const configManager = require('../lib/config');
 
 // Da executeAlert, executeEffect und executeTimedEffect Netzwerkcalls machen,
 // testen wir die Effekt-Keyword-Logik und die Math-Funktionen isoliert.
-const { _internals } = require('../lib/hue');
+const hueManager = require('../lib/hue');
+const { _internals } = hueManager;
 const { kelvinToMirek, rgbToHex, rgbToXy, mirekToHex, xyToHex, hueLightToLux, mapRange, appendEventStreamChunk, extractSseData, buildMultiSyncSchedule } = _internals;
 
 // --- Farb-Mathematik ---
@@ -125,6 +127,32 @@ test('Multi-Sync Scheduler erlaubt schnellere experimentelle Rate kontrolliert',
             `Abstand ${i} war ${schedule[i].delayMs - schedule[i - 1].delayMs}ms`
         );
     }
+});
+
+test('Multi-Sync Preview trennt Lampen nach Gruppe', () => {
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 30,
+        groups: [
+            { id: 'a', name: 'Wohnzimmer', syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 20 },
+            { id: 'b', name: 'Buero', syncWindowMs: 100, batchSize: 2, batchDelayMs: 20, maxCommandsPerSecond: 10 }
+        ]
+    });
+
+    const preview = hueManager.getMultiSyncPreview([
+        { hue_type: 'light', multi_sync: true, multi_sync_group: 'a', loxone_name: 'wohn_1' },
+        { hue_type: 'light', multi_sync: true, multi_sync_group: 'a', loxone_name: 'wohn_2' },
+        { hue_type: 'light', multi_sync: true, multi_sync_group: 'b', loxone_name: 'buero_1' },
+        { hue_type: 'group', multi_sync: true, multi_sync_group: 'a', loxone_name: 'hue_group' }
+    ]);
+
+    const groupA = preview.groups.find(group => group.groupId === 'a');
+    const groupB = preview.groups.find(group => group.groupId === 'b');
+
+    assert.strictEqual(preview.bridgeMaxCommandsPerSecond, 30);
+    assert.strictEqual(groupA.settings.name, 'Wohnzimmer');
+    assert.strictEqual(groupA.activeLights, 2);
+    assert.strictEqual(groupB.settings.name, 'Buero');
+    assert.strictEqual(groupB.activeLights, 1);
 });
 
 // --- Effekt-Keyword-Validierung ---

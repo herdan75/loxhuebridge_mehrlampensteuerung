@@ -152,6 +152,7 @@ Sync-Offset: 0 ms
 | Loxone Sync | Statusänderungen dieser Lampe werden per UDP an Loxone zurückgemeldet |
 | Dynamics ignorieren | Sendet Hue-Befehle ohne `dynamics.duration`. Das ist sinnvoll für reine Schaltaktoren oder wenn ein Gerät mit Hue Dynamics Probleme macht |
 | Mehrlampensynchronisierung | Diese einzelne Lampe nimmt am gemeinsamen Sammel-/Timing-Ablauf teil |
+| Gruppe | Zuordnung zu Gruppe A-E. Die Gruppennamen koennen in den globalen Einstellungen frei benannt werden, z. B. Wohnzimmer, Buero oder Kueche |
 | Sync-Offset | Feinjustierung nur für diese Lampe. Negativ = früher, positiv = später |
 
 Den Sync-Offset erst nach einem Testlauf anpassen:
@@ -161,20 +162,24 @@ Lampe reagiert später  → Offset z. B. -30 ms oder -50 ms
 Lampe reagiert früher  → Offset z. B. +30 ms oder +50 ms
 ```
 
-### Globale Multi-Sync Einstellungen
+### Gruppen und globale Multi-Sync Einstellungen
 
 Die Werte können über das Webinterface angepasst werden:
 
 | Einstellung | Empfehlung | Erklärung |
 | --- | ---: | --- |
+| Max. Bridge-Befehle/s | 30 | Sicherheitsgrenze über alle Multi-Sync-Gruppen hinweg. Wichtig, wenn mehrere Räume gleichzeitig schalten |
+| Gruppenname | Gruppe A-E | Frei benennbarer Anzeigename pro Gruppe |
 | Sammelfenster | 120 ms | Zeitfenster, in dem mehrere Loxone-Kommandos gesammelt werden |
 | Batchgröße | 4-10 | Anzahl Lampen pro logischem Block. Der Wert beeinflusst die zusätzliche Batch-Pause, die maximale Befehlsrate bleibt aber die wichtigste Grenze |
 | Batch-Pause | 30 ms | Zusätzliche Pause nach jedem Batch. Hilft, wenn die Bridge bei großen Gruppen kurz ins Stolpern kommt |
-| Max. Lichtbefehle/s | 10 | Hue-konservativer Startwert. Für die eigene Bridge schrittweise erhöhen, z. B. 15, 20, 25/s |
+| Max. Lichtbefehle/s | 10 | Limit der jeweiligen Gruppe. Für die eigene Bridge schrittweise erhöhen, z. B. 15, 20, 25/s |
+
+Es gibt fünf neutrale Gruppen A-E. Alte Installationen ohne Gruppenzuordnung laufen automatisch in Gruppe A weiter. Jede Gruppe hat eigene Timingwerte, zusätzlich begrenzt **Max. Bridge-Befehle/s** die Gesamtlast über alle Gruppen.
 
 ### Timing-Test / Simulation lesen
 
-Der Bereich **Timing-Test** im Webinterface simuliert den Ablauf für alle aktuell aktivierten Multi-Sync-Lampen:
+Der Bereich **Timing-Test** im Webinterface simuliert den Ablauf je Gruppe für alle dort aktivierten Multi-Sync-Lampen:
 
 | Anzeige | Bedeutung |
 | --- | --- |
