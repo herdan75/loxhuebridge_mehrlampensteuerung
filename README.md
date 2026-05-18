@@ -2,7 +2,7 @@
 
 **loxHueBridge** ist eine bidirektionale Schnittstelle zwischen dem **Loxone Miniserver**, der **Philips Hue Bridge (V2 / API)** und optional **MQTT**.
 
-Dieser Fork erweitert loxHueBridge um eine **gruppierte Mehrlampensynchronisierung pro Lampe** und behebt das **robuste SSE/EventStream Parsing** bei großen Hue Events.
+Dieser Fork erweitert loxHueBridge um eine **gruppierte Mehrlampensynchronisierung pro Lampe**, einen **Effekt-Fallback fuer Hue Gruppen/Raeume/Zonen** und behebt das **robuste SSE/EventStream Parsing** bei großen Hue Events.
 
 Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung und nutzt die moderne Hue Event-Schnittstelle (SSE), um Statusänderungen in Echtzeit an Loxone (UDP) und MQTT Broker zurückzumelden.
 
@@ -11,7 +11,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.0-dev Mehrlampensteuerung
+## 🚀 Features V2.5.1 Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
@@ -20,6 +20,9 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 * **Freie Gruppennamen:** Gruppe A-E können im Systembereich individuell benannt werden.
 * **Eigene Einstellungen pro Gruppe:** Sammelfenster, Batchgröße, Batch-Pause, Lichtbefehle/s und Timing-Test sind pro Gruppe separat einstellbar.
 * **Globale Bridge-Sicherheitsgrenze:** `Max. Bridge-Befehle/s` begrenzt die Gesamtlast über alle Gruppen hinweg, falls mehrere Räume gleichzeitig schalten.
+* **Hue Effekt-Fallback fuer Gruppen/Raeume/Zonen:** Effektbefehle wie `candle`, `fire`, `prism`, `sparkle`, `opal`, `glisten`, `noeffect` und `sunrise` werden bei Hue Gruppen/Raeumen/Zonen intern auf die enthaltenen einzelnen Hue-Lampen verteilt.
+* **Multi-Sync Timing auch fuer Gruppen-Effekte:** Wenn enthaltene Lampen einer loxHueBridge Gruppe A-E zugeordnet sind, werden deren Timing-/Rate-Einstellungen auch beim Effekt-Fallback verwendet.
+* **Direkte Multi-Sync Effektziele:** loxHueBridge Gruppen koennen direkt per URL angesprochen werden, z. B. `/gruppe_a/candle`, `/group_b/fire` oder ueber den frei vergebenen Gruppennamen.
 * **Sync-Offset pro Lampe:** Jede Lampe kann zeitlich feinjustiert werden.
     * negativer Offset = früher senden
     * positiver Offset = später senden
@@ -38,7 +41,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 ### Bestehende Features
 
 * **Nativer „Alles" Befehl:** Nutzt die Hue `bridge_home` API für blitzschnelles Ausschalten des gesamten Hauses.
-* **Hue Effekte & Alert:** Steuere Lampen mit atmosphärischen Effekten direkt aus Loxone:
+* **Hue Effekte & Alert:** Steuere Lampen, Hue Raeume/Zonen und loxHueBridge Multi-Sync-Lampen mit atmosphärischen Effekten direkt aus Loxone:
     * `/{name}/alert` → Einmaliges Blinken (Alarmmeldung, Türklingel)
     * `/{name}/candle` / `/fire` / `/prism` / `/sparkle` → Persistente Atmosphäre-Effekte
     * `/{name}/noeffect` → Effekt stoppen
@@ -99,10 +102,10 @@ Dieses Repository verwendet zwei Branches:
 
 | Branch | Zweck |
 | --- | --- |
-| `main` | Stabiler Stand für den normalen Betrieb |
-| `develop` | Test-/Weiterentwicklungsstand, z. B. neue Gruppenfunktion für die Mehrlampensynchronisierung |
+| `main` | Stabiler Stand fuer den normalen Betrieb, inkl. Mehrlampengruppen und Effekt-Fallback |
+| `develop` | Test-/Weiterentwicklungsstand fuer neue Funktionen vor der Uebernahme nach `main` |
 
-Wenn kein Branch angegeben wird, wird normalerweise `main` installiert. Wer die neue gruppierte Mehrlampensynchronisierung testen möchte, muss ausdrücklich `develop` verwenden.
+Wenn kein Branch angegeben wird, wird normalerweise `main` installiert. Das ist die empfohlene Variante fuer den normalen Betrieb.
 
 ### Develop frisch installieren
 
@@ -126,7 +129,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.0-dev
+Version: 2.5.1
 ```
 
 ### Zurück auf main
@@ -198,7 +201,9 @@ node server.js
 
 ## 💡 Mehrlampensynchronisierung verwenden
 
-Die Mehrlampensynchronisierung wird **pro einzelner Hue-Lampe** aktiviert. Nur Lampen mit aktivierter Option **Mehrlampensynchronisierung** laufen in den gemeinsamen Sammel-/Timing-Ablauf. Hue Gruppen, Räume und Zonen werden nicht in diesen Ablauf aufgenommen, weil sie über `grouped_light` bereits als ein Bridge-Befehl gesteuert werden.
+Die Mehrlampensynchronisierung wird **pro einzelner Hue-Lampe** aktiviert. Nur Lampen mit aktivierter Option **Mehrlampensynchronisierung** laufen bei normalen Schalt-, Dimm- und Farbwerten in den gemeinsamen Sammel-/Timing-Ablauf.
+
+Hue Gruppen, Räume und Zonen werden bei normalen numerischen Befehlen weiterhin direkt ueber `grouped_light` gesteuert. Bei Hue Effekten ist das anders: Da die Hue API v2 Effekte wie `candle` oder `fire` nur am Endpunkt `light` akzeptiert, loest loxHueBridge Gruppen/Raeume/Zonen fuer Effektbefehle automatisch in einzelne Lampen auf.
 
 Empfohlene Einstellung für Ambient-Szenen mit mehreren einzelnen Hue-Lampen:
 
@@ -240,6 +245,46 @@ Die Werte können über das Webinterface angepasst werden:
 | Max. Lichtbefehle/s | 10 | Limit der jeweiligen Gruppe. Für die eigene Bridge schrittweise erhöhen, z. B. 15, 20, 25/s |
 
 Es gibt fünf neutrale Gruppen A-E. Alte Installationen ohne Gruppenzuordnung laufen automatisch in Gruppe A weiter. Jede Gruppe hat eigene Timingwerte, zusätzlich begrenzt **Max. Bridge-Befehle/s** die Gesamtlast über alle Gruppen.
+
+### Hue Effekte auf Gruppen, Raeume und Zonen
+
+Effekte koennen wie bisher ueber dieselben URLs aus Loxone aufgerufen werden:
+
+```text
+/{name}/candle
+/{name}/fire
+/{name}/prism
+/{name}/sparkle
+/{name}/opal
+/{name}/glisten
+/{name}/noeffect
+/{name}/sunrise/30
+```
+
+Wenn `{name}` eine einzelne Hue-Lampe ist, wird der Effekt direkt an diese Lampe gesendet.
+
+Wenn `{name}` eine Hue-Gruppe, ein Hue-Raum oder eine Hue-Zone ist, sucht loxHueBridge die enthaltenen Hue-Lampen und sendet den Effekt einzeln an diese Lampen. Damit funktionieren z. B. auch Aufrufe wie:
+
+```text
+/wz_group/candle
+/wohnzimmer/fire
+/ambiente_zone/noeffect
+```
+
+Die Hue-Gruppe bleibt also das bequeme Ziel in Loxone, technisch wird aber jede enthaltene Lampe ueber `/resource/light` angesprochen. Das ist noetig, weil Hue Effekte nicht zuverlaessig direkt auf `grouped_light` ausgefuehrt werden.
+
+Wenn eine enthaltene Lampe in loxHueBridge einer Multi-Sync-Gruppe A-E zugeordnet ist, nutzt der Effekt-Fallback die Timingwerte dieser Gruppe. Nicht zugeordnete Lampen werden mit einem sicheren Standard verteilt. Dadurch koennen mehrere Lampen sehr zeitnah starten, ohne die Hue Bridge mit einem harten Request-Stoss zu ueberfahren.
+
+Alternativ koennen die loxHueBridge Multi-Sync-Gruppen direkt angesprochen werden. Das ist praktisch, wenn die Hue-Raumstruktur nicht exakt der gewuenschten Loxone-Steuerung entspricht:
+
+```text
+/gruppe_a/candle
+/gruppe_b/fire
+/group_c/noeffect
+/wohnzimmer_ambient/candle
+```
+
+Unterstuetzt werden die Aliase `gruppe_a` bis `gruppe_e`, `group_a` bis `group_e`, `multisync_a` bis `multisync_e`, `sync_a` bis `sync_e` sowie der frei vergebene Gruppenname. Bestehende Mappings haben Vorrang, falls ein Loxone-Name gleich heisst.
 
 ### Timing-Test / Simulation lesen
 

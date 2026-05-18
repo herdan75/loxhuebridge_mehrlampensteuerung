@@ -1,12 +1,45 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const Module = require('node:module');
+
+const originalLoad = Module._load;
+Module._load = function mockOptionalDeps(request, parent, isMain) {
+    if (request === 'axios') {
+        const axiosMock = async () => ({ data: { data: [] } });
+        axiosMock.get = async () => ({ data: { data: [] } });
+        axiosMock.post = async () => ({ data: [] });
+        axiosMock.put = async () => ({ data: [] });
+        return axiosMock;
+    }
+    if (request === 'mqtt') {
+        return { connect: () => ({ on: () => {}, end: () => {}, publish: () => {}, connected: false }) };
+    }
+
+    return originalLoad(request, parent, isMain);
+};
+
 const configManager = require('../lib/config');
 
 // Da executeAlert, executeEffect und executeTimedEffect Netzwerkcalls machen,
 // testen wir die Effekt-Keyword-Logik und die Math-Funktionen isoliert.
 const hueManager = require('../lib/hue');
 const { _internals } = hueManager;
-const { kelvinToMirek, rgbToHex, rgbToXy, mirekToHex, xyToHex, hueLightToLux, mapRange, appendEventStreamChunk, extractSseData, buildMultiSyncSchedule } = _internals;
+const {
+    kelvinToMirek,
+    rgbToHex,
+    rgbToXy,
+    mirekToHex,
+    xyToHex,
+    hueLightToLux,
+    mapRange,
+    appendEventStreamChunk,
+    extractSseData,
+    buildMultiSyncSchedule,
+    resolveGroupLightIds,
+    buildEffectTargets,
+    buildMultiSyncGroupEffectTargets,
+    normalizeCommandName
+} = _internals;
 
 // --- Farb-Mathematik ---
 test('kelvinToMirek: Standard-Werte', () => {
@@ -153,6 +186,65 @@ test('Multi-Sync Preview trennt Lampen nach Gruppe', () => {
     assert.strictEqual(groupA.activeLights, 2);
     assert.strictEqual(groupB.settings.name, 'Buero');
     assert.strictEqual(groupB.activeLights, 1);
+});
+
+test('Gruppen-Effekt-Fallback loest Hue Raum/Zone auf einzelne Lampen auf', () => {
+    const rooms = [{
+        id: 'room-1',
+        services: [{ rtype: 'grouped_light', rid: 'grouped-wz' }],
+        children: [
+            { rtype: 'device', rid: 'device-1' },
+            { rtype: 'device', rid: 'device-2' }
+        ]
+    }];
+    const zones = [];
+    const devices = [
+        { id: 'device-1', services: [{ rtype: 'light', rid: 'light-1' }] },
+        { id: 'device-2', services: [{ rtype: 'light', rid: 'light-2' }, { rtype: 'zigbee_connectivity', rid: 'zigbee-2' }] }
+    ];
+
+    assert.deepStrictEqual(resolveGroupLightIds('grouped-wz', rooms, zones, devices), ['light-1', 'light-2']);
+});
+
+test('Gruppen-Effekt-Fallback uebernimmt Multi-Sync-Zuordnung gemappter Lampen', () => {
+    configManager.mapping = [
+        { hue_type: 'light', hue_uuid: 'light-1', loxone_name: 'wohn_links', multi_sync: true, multi_sync_group: 'a' },
+        { hue_type: 'light', hue_uuid: 'light-2', loxone_name: 'wohn_rechts', multi_sync: true, multi_sync_group: 'a' }
+    ];
+
+    const targets = buildEffectTargets(
+        { hue_type: 'group', hue_uuid: 'grouped-wz', loxone_name: 'wz_group' },
+        ['light-1', 'light-2', 'light-3']
+    );
+
+    assert.strictEqual(targets.length, 3);
+    assert.strictEqual(targets[0].entry.loxone_name, 'wohn_links');
+    assert.strictEqual(targets[0].entry.multi_sync_group, 'a');
+    assert.strictEqual(targets[2].entry.loxone_name, 'wz_group_3');
+    assert.strictEqual(targets[2].entry.multi_sync, false);
+});
+
+test('Multi-Sync Gruppen-Effektziel findet Lampen der gewaehlten loxHueBridge Gruppe', () => {
+    configManager.mapping = [
+        { hue_type: 'light', hue_uuid: 'light-a1', loxone_name: 'wohn_1', multi_sync: true, multi_sync_group: 'a' },
+        { hue_type: 'light', hue_uuid: 'light-a2', loxone_name: 'wohn_2', multi_sync: true, multi_sync_group: 'a' },
+        { hue_type: 'light', hue_uuid: 'light-b1', loxone_name: 'buero_1', multi_sync: true, multi_sync_group: 'b' },
+        { hue_type: 'light', hue_uuid: 'light-off', loxone_name: 'normal', multi_sync: false, multi_sync_group: 'a' }
+    ];
+
+    const targets = buildMultiSyncGroupEffectTargets('a');
+
+    assert.deepStrictEqual(targets.map(target => target.uuid), ['light-a1', 'light-a2']);
+});
+
+test('Multi-Sync Gruppenname kann als URL-Ziel erkannt werden', () => {
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        groups: [{ id: 'a', name: 'Wohnzimmer Ambient' }]
+    });
+
+    assert.strictEqual(normalizeCommandName('Wohnzimmer Ambient'), 'wohnzimmer_ambient');
+    assert.strictEqual(hueManager.resolveMultiSyncGroupCommandName('gruppe_a'), 'a');
+    assert.strictEqual(hueManager.resolveMultiSyncGroupCommandName('Wohnzimmer Ambient'), 'a');
 });
 
 // --- Effekt-Keyword-Validierung ---
