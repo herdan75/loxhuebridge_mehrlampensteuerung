@@ -11,7 +11,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.1 Mehrlampensteuerung
+## 🚀 Features V2.5.1-dev Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
@@ -129,7 +129,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.1
+Version: 2.5.1-dev
 ```
 
 ### Zurück auf main

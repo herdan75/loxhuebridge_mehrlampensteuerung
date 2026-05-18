@@ -1,4 +1,4 @@
-## [2.5.1] - 2026-05-18
+## [2.5.1-dev] - 2026-05-18
 ### New Features
 - **Hue Effekt-Fallback fuer Gruppen/Raeume/Zonen:** Effektbefehle wie `candle`, `fire`, `prism`, `sparkle`, `opal`, `glisten`, `noeffect` und `sunrise` werden bei Hue Gruppen/Raeumen/Zonen intern auf die enthaltenen einzelnen Hue-Lampen aufgeloest.
 - **Multi-Sync Timing fuer Gruppen-Effekte:** Enthaltene Lampen mit loxHueBridge Multi-Sync-Gruppe A-E verwenden beim Effekt-Fallback die Timing- und Rate-Einstellungen ihrer Gruppe.
