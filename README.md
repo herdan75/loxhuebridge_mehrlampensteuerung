@@ -93,6 +93,54 @@ Der Ordner `data` enthält deine Konfiguration (`config.json`), Mappings (`mappi
 
 ---
 
+## Main oder Develop?
+
+Dieses Repository verwendet zwei Branches:
+
+| Branch | Zweck |
+| --- | --- |
+| `main` | Stabiler Stand für den normalen Betrieb |
+| `develop` | Test-/Weiterentwicklungsstand, z. B. neue Gruppenfunktion für die Mehrlampensynchronisierung |
+
+Wenn kein Branch angegeben wird, wird normalerweise `main` installiert. Wer die neue gruppierte Mehrlampensynchronisierung testen möchte, muss ausdrücklich `develop` verwenden.
+
+### Develop frisch installieren
+
+```bash
+git clone -b develop https://github.com/herdan75/loxhuebridge_mehrlampensteuerung.git
+cd loxhuebridge_mehrlampensteuerung
+docker compose up -d --build
+```
+
+### Bestehende Installation auf develop umstellen
+
+```bash
+cd loxhuebridge_mehrlampensteuerung
+git fetch
+git checkout develop
+git pull
+docker compose down
+docker compose up -d --build
+```
+
+Danach im Webinterface unter **System** prüfen:
+
+```text
+Version: 2.5.0-dev
+```
+
+### Zurück auf main
+
+```bash
+cd loxhuebridge_mehrlampensteuerung
+git checkout main
+git pull
+docker compose down
+docker compose up -d --build
+```
+
+---
+
 ## 🐳 docker-compose.yml für diesen Fork
 
 ```yaml
@@ -115,8 +163,20 @@ services:
 
 ## 🔄 Update dieses Forks
 
+Für den stabilen Branch `main`:
+
 ```bash
 cd loxhuebridge_mehrlampensteuerung
+git checkout main
+git pull
+docker compose up -d --build
+```
+
+Für den Test-/Entwicklungsbranch `develop`:
+
+```bash
+cd loxhuebridge_mehrlampensteuerung
+git checkout develop
 git pull
 docker compose up -d --build
 ```
