@@ -1,4 +1,4 @@
-## [2.5.0-dev] - 2026-05-18
+## [2.5.0] - 2026-05-18
 ### New Features
 - **Gruppierte Mehrlampensynchronisierung:** Einzelne Hue-Lampen koennen jetzt einer von fuenf neutralen Multi-Sync-Gruppen A-E zugeordnet werden. Damit lassen sich mehrere Raeume oder Lampenbereiche unabhaengig voneinander abstimmen.
 - **Freie Gruppennamen:** Die Gruppen A-E koennen im Systembereich individuell benannt werden, z. B. Wohnzimmer, Buero oder Kueche.
