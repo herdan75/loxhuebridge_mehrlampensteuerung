@@ -601,6 +601,7 @@ let currentTab = 'light';
         
         d.transitionTime = document.getElementById('sys_transition').value;
         d.throttleTime = document.getElementById('sys_throttle').value;
+        d.eventStreamWatchdogTimeoutSeconds = document.getElementById('sys_eventStreamWatchdogTimeoutSeconds').value;
         d.multiBridgeMaxCommandsPerSecond = getBridgeMaxCommandsPerSecondFromForm();
         d.multiGroups = MULTI_SYNC_GROUP_IDS.map(id => getMultiSyncFormSettings(id));
 
@@ -611,7 +612,7 @@ let currentTab = 'light';
         try {
             await fetch('/api/setup/loxone', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                 loxoneIp: d.loxIp, loxonePort: d.loxPort, debug: d.debug,
-                transitionTime: d.transitionTime, throttleTime: d.throttleTime,
+                transitionTime: d.transitionTime, throttleTime: d.throttleTime, eventStreamWatchdogTimeoutSeconds: d.eventStreamWatchdogTimeoutSeconds,
                 mqttEnabled: d.mqttEnabled, mqttBroker: d.mqttBroker, mqttPort: d.mqttPort, mqttUser: d.mqttUser, mqttPass: d.mqttPass, mqttPrefix: d.mqttPrefix,
                 disableLogDisk: d.disableLogDisk,
                 multiLightControl: {
@@ -653,6 +654,16 @@ let currentTab = 'light';
                             <input type="range" id="sys_throttle" min="0" max="1000" step="50" value="${v(s.throttleTime)}" oninput="document.getElementById('val_thro').innerText = this.value + ' ms'">
                             <span id="val_thro" class="slider-val">${v(s.throttleTime)} ms</span>
                         </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>EventStream Watchdog</td>
+                    <td>
+                        <div class="slider-container">
+                            <input type="range" id="sys_eventStreamWatchdogTimeoutSeconds" min="60" max="3600" step="60" value="${v(s.eventStreamWatchdogTimeoutSeconds ?? 600)}" oninput="document.getElementById('val_eventWatchdog').innerText = Math.round(this.value / 60) + ' min'">
+                            <span id="val_eventWatchdog" class="slider-val">${Math.round((s.eventStreamWatchdogTimeoutSeconds ?? 600) / 60)} min</span>
+                        </div>
+                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Neustart des Hue EventStreams nach Ruhezeit ohne Daten. Standard: 10 min; niedriger nur bei echten Aussetzern.</div>
                     </td>
                 </tr>
 

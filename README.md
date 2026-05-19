@@ -24,6 +24,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 * **Multi-Sync Timing auch fuer Gruppen-Effekte:** Wenn enthaltene Lampen einer loxHueBridge Gruppe A-E zugeordnet sind, werden deren Timing-/Rate-Einstellungen auch beim Effekt-Fallback verwendet.
 * **Direkte Multi-Sync Effektziele:** loxHueBridge Gruppen koennen direkt per URL angesprochen werden, z. B. `/gruppe_a/candle`, `/group_b/fire` oder ueber den frei vergebenen Gruppennamen.
 * **Alles-Effekt:** `/all/candle`, `/alles/fire` und `/all/sunrise/30` verteilen Effekte auf alle einzeln gemappten Hue-Lampen.
+* **Einstellbarer EventStream Watchdog:** Der Neustart bei ausbleibenden Hue Events ist global einstellbar. Standard ist 10 Minuten, damit ruhige Installationen nicht alle 60-90 Sekunden neu verbinden.
 * **Sync-Offset pro Lampe:** Jede Lampe kann zeitlich feinjustiert werden.
     * negativer Offset = früher senden
     * positiver Offset = später senden
@@ -67,6 +68,22 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 * Loxone Miniserver
 * Ein Server für Docker, z. B. Raspberry Pi, Synology, Unraid oder LoxBerry mit Docker
 * *Nur bei manueller Installation:* Node.js 24+
+
+---
+
+## Hue EventStream Watchdog
+
+loxHueBridge überwacht den Hue EventStream, damit eine hängende Verbindung automatisch neu aufgebaut wird. In ruhigen Installationen kann es aber normal sein, dass längere Zeit keine Hue Events eintreffen. Deshalb ist der Watchdog im Systembereich einstellbar.
+
+Empfehlung:
+
+| Einstellung | Empfehlung |
+| --- | --- |
+| EventStream Watchdog | 10 min |
+| Bei echten Aussetzern | schrittweise reduzieren, z. B. 5 min |
+| Bei sehr ruhigen Installationen | eher 10-20 min |
+
+Ein Wert von 60-90 Sekunden ist meist zu aggressiv, weil er bei wenig Hue-Aktivität unnötige Reconnects und Initial-Syncs auslösen kann.
 
 ---
 

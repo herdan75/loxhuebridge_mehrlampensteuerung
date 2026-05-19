@@ -120,6 +120,24 @@ test('SSE Parser verarbeitet CRLF und mehrzeilige data Felder', () => {
     assert.strictEqual(extractSseData(parsed.rawEvents[0]), '{"a":1,\n"b":2}');
 });
 
+test('EventStream Watchdog startet bei kurzer Ruhezeit nicht neu', () => {
+    configManager.config.eventStreamWatchdogTimeoutSeconds = 600;
+
+    assert.strictEqual(
+        _internals.shouldRestartEventStreamForSilence(0, 90 * 1000, true),
+        false
+    );
+});
+
+test('EventStream Watchdog startet nach konfigurierter Ruhezeit neu', () => {
+    configManager.config.eventStreamWatchdogTimeoutSeconds = 120;
+
+    assert.strictEqual(
+        _internals.shouldRestartEventStreamForSilence(0, 121 * 1000, true),
+        true
+    );
+});
+
 // --- Mehrlampensynchronisierung ---
 test('Multi-Sync Scheduler respektiert maximale Hue Befehlsrate', () => {
     const items = Array.from({ length: 11 }, (_, index) => ({
