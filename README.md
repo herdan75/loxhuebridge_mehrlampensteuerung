@@ -20,9 +20,10 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 * **Freie Gruppennamen:** Gruppe A-E können im Systembereich individuell benannt werden.
 * **Eigene Einstellungen pro Gruppe:** Sammelfenster, Batchgröße, Batch-Pause, Lichtbefehle/s und Timing-Test sind pro Gruppe separat einstellbar.
 * **Globale Bridge-Sicherheitsgrenze:** `Max. Bridge-Befehle/s` begrenzt die Gesamtlast über alle Gruppen hinweg, falls mehrere Räume gleichzeitig schalten.
-* **Hue Effekt-Fallback fuer Gruppen/Raeume/Zonen:** Effektbefehle wie `candle`, `fire`, `prism`, `sparkle`, `opal`, `glisten`, `noeffect` und `sunrise` werden bei Hue Gruppen/Raeumen/Zonen intern auf die enthaltenen einzelnen Hue-Lampen verteilt.
+* **Hue Effekt-Fallback fuer Gruppen/Raeume/Zonen:** Effektbefehle wie `candle`, `fire`/`fireplace`, `prism`, `sparkle`, `opal`, `glisten`, `noeffect` und `sunrise` werden bei Hue Gruppen/Raeumen/Zonen intern auf die enthaltenen einzelnen Hue-Lampen verteilt.
 * **Multi-Sync Timing auch fuer Gruppen-Effekte:** Wenn enthaltene Lampen einer loxHueBridge Gruppe A-E zugeordnet sind, werden deren Timing-/Rate-Einstellungen auch beim Effekt-Fallback verwendet.
 * **Direkte Multi-Sync Effektziele:** loxHueBridge Gruppen koennen direkt per URL angesprochen werden, z. B. `/gruppe_a/candle`, `/group_b/fire` oder ueber den frei vergebenen Gruppennamen.
+* **Alles-Effekt:** `/all/candle`, `/alles/fire` und `/all/sunrise/30` verteilen Effekte auf alle einzeln gemappten Hue-Lampen.
 * **Sync-Offset pro Lampe:** Jede Lampe kann zeitlich feinjustiert werden.
     * negativer Offset = früher senden
     * positiver Offset = später senden
@@ -43,7 +44,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 * **Nativer „Alles" Befehl:** Nutzt die Hue `bridge_home` API für blitzschnelles Ausschalten des gesamten Hauses.
 * **Hue Effekte & Alert:** Steuere Lampen, Hue Raeume/Zonen und loxHueBridge Multi-Sync-Lampen mit atmosphärischen Effekten direkt aus Loxone:
     * `/{name}/alert` → Einmaliges Blinken (Alarmmeldung, Türklingel)
-    * `/{name}/candle` / `/fire` / `/prism` / `/sparkle` → Persistente Atmosphäre-Effekte
+    * `/{name}/candle` / `/fire` / `/fireplace` / `/prism` / `/sparkle` → Persistente Atmosphäre-Effekte
     * `/{name}/noeffect` → Effekt stoppen
     * `/{name}/sunrise/30` → 30-Sekunden Sonnenaufgang (oder beliebige Dauer)
 * **Modularer Kern:** Hochperformante und wartbare Backend-Architektur durch saubere Modul-Trennung (`lib/`).
@@ -253,6 +254,7 @@ Effekte koennen wie bisher ueber dieselben URLs aus Loxone aufgerufen werden:
 ```text
 /{name}/candle
 /{name}/fire
+/{name}/fireplace
 /{name}/prism
 /{name}/sparkle
 /{name}/opal
@@ -285,6 +287,16 @@ Alternativ koennen die loxHueBridge Multi-Sync-Gruppen direkt angesprochen werde
 ```
 
 Unterstuetzt werden die Aliase `gruppe_a` bis `gruppe_e`, `group_a` bis `group_e`, `multisync_a` bis `multisync_e`, `sync_a` bis `sync_e` sowie der frei vergebene Gruppenname. Bestehende Mappings haben Vorrang, falls ein Loxone-Name gleich heisst.
+
+Fuer das gesamte Haus koennen Effekte auf alle einzeln gemappten Hue-Lampen verteilt werden:
+
+```text
+/all/candle
+/alles/fire
+/all/sunrise/30
+```
+
+Dabei werden bewusst nur einzelne Hue-Lampen verwendet. Gemappte Hue-Gruppen werden nicht erneut in den Alles-Effekt aufgenommen, damit Lampen nicht doppelt angesteuert werden.
 
 ### Timing-Test / Simulation lesen
 

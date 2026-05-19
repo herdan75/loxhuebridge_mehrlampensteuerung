@@ -1,15 +1,17 @@
-## [2.5.1-dev] - 2026-05-18
+## [2.5.1-dev] - 2026-05-19
 ### New Features
 - **Hue Effekt-Fallback fuer Gruppen/Raeume/Zonen:** Effektbefehle wie `candle`, `fire`, `prism`, `sparkle`, `opal`, `glisten`, `noeffect` und `sunrise` werden bei Hue Gruppen/Raeumen/Zonen intern auf die enthaltenen einzelnen Hue-Lampen aufgeloest.
 - **Multi-Sync Timing fuer Gruppen-Effekte:** Enthaltene Lampen mit loxHueBridge Multi-Sync-Gruppe A-E verwenden beim Effekt-Fallback die Timing- und Rate-Einstellungen ihrer Gruppe.
 - **Direkte Multi-Sync Effektziele:** Gruppen A-E koennen direkt per URL angesteuert werden, z. B. `/gruppe_a/candle`, `/group_b/fire` oder ueber den frei vergebenen Gruppennamen.
+- **Alles-Effekt:** `/all/candle`, `/alles/fire` und `/all/sunrise/30` verteilen Effekte auf alle einzeln gemappten Hue-Lampen.
 
 ### Verbesserungen
 - **API-konforme Effektsteuerung:** Gruppen-Effekte werden nicht mehr gegen `grouped_light` ausgefuehrt, sondern einzeln gegen `/resource/light`, wie es die Hue API v2 fuer Effekte erwartet.
 - **Sicherer Standard fuer nicht gemappte Lampen:** Lampen, die in einer Hue-Gruppe enthalten, aber nicht einzeln in loxHueBridge gemappt sind, werden trotzdem mit konservativem Timing angesteuert.
+- **Effekt-Alias:** `fireplace` wird als Alias fuer den Hue Effekt `fire` akzeptiert.
 
 ### Tests
-- Tests fuer die Aufloesung von Hue Raeumen/Zonen auf einzelne Lampen, fuer direkte Multi-Sync-Gruppenziele und fuer die Uebernahme der Multi-Sync-Zuordnung bei Gruppen-Effekten ergaenzt.
+- Tests fuer die Aufloesung von Hue Raeumen/Zonen auf einzelne Lampen, direkte Multi-Sync-Gruppenziele, Alles-Effektziele und die Uebernahme der Multi-Sync-Zuordnung bei Gruppen-Effekten ergaenzt.
 
 ## [2.5.0] - 2026-05-18
 ### New Features

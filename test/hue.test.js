@@ -38,6 +38,7 @@ const {
     resolveGroupLightIds,
     buildEffectTargets,
     buildMultiSyncGroupEffectTargets,
+    buildAllLightEffectTargets,
     normalizeCommandName
 } = _internals;
 
@@ -247,10 +248,23 @@ test('Multi-Sync Gruppenname kann als URL-Ziel erkannt werden', () => {
     assert.strictEqual(hueManager.resolveMultiSyncGroupCommandName('Wohnzimmer Ambient'), 'a');
 });
 
+test('All-Effektziel verwendet nur gemappte Einzel-Lampen und dedupliziert sie', () => {
+    configManager.mapping = [
+        { hue_type: 'light', hue_uuid: 'light-1', loxone_name: 'wohn_1', multi_sync: true, multi_sync_group: 'a' },
+        { hue_type: 'light', hue_uuid: 'light-1', loxone_name: 'wohn_1_duplikat', multi_sync: true, multi_sync_group: 'a' },
+        { hue_type: 'light', hue_uuid: 'light-2', loxone_name: 'wohn_2', multi_sync: true, multi_sync_group: 'b' },
+        { hue_type: 'group', hue_uuid: 'grouped-wz', loxone_name: 'wz_group' }
+    ];
+
+    const targets = buildAllLightEffectTargets();
+
+    assert.deepStrictEqual(targets.map(target => target.uuid), ['light-1', 'light-2']);
+});
+
 // --- Effekt-Keyword-Validierung ---
 test('Effekt-Keywords sind vollständig und korrekt definiert', () => {
     const ALERT_KEYWORDS  = ['alert', 'breathe'];
-    const EFFECT_KEYWORDS = ['candle', 'fire', 'prism', 'sparkle', 'opal', 'glisten', 'noeffect', 'no_effect'];
+    const EFFECT_KEYWORDS = ['candle', 'fire', 'fireplace', 'prism', 'sparkle', 'opal', 'glisten', 'noeffect', 'no_effect'];
     const TIMED_EFFECTS   = ['sunrise'];
 
     // Keine Überschneidungen
@@ -263,7 +277,12 @@ test('Effekt-Keywords sind vollständig und korrekt definiert', () => {
     TIMED_EFFECTS.forEach(k  => assert.ok(!effectSet.has(k),  `${k} darf nicht in beiden Listen sein`));
 
     // 'noeffect' muss zu 'no_effect' normalisiert werden
-    const normalize = (v) => v === 'noeffect' ? 'no_effect' : v;
+    const normalize = (v) => {
+        if (v === 'noeffect') return 'no_effect';
+        if (v === 'fireplace') return 'fire';
+        return v;
+    };
     assert.strictEqual(normalize('noeffect'), 'no_effect');
+    assert.strictEqual(normalize('fireplace'), 'fire');
     assert.strictEqual(normalize('candle'), 'candle');
 });
