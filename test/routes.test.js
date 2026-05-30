@@ -1,7 +1,48 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const Module = require('node:module');
+
+const originalLoad = Module._load;
+Module._load = function mockOptionalDeps(request, parent, isMain) {
+    if (request === 'express') {
+        return {
+            Router: () => {
+                const router = {
+                    stack: [],
+                    get(path, handler) {
+                        this.stack.push({ route: { path, stack: [{ handle: handler }] } });
+                    },
+                    post(path, handler) {
+                        this.stack.push({ route: { path, stack: [{ handle: handler }] } });
+                    }
+                };
+                return router;
+            }
+        };
+    }
+    if (request === 'axios') {
+        const axiosMock = async () => ({ data: { data: [] } });
+        axiosMock.get = async () => ({ data: { data: [] } });
+        axiosMock.post = async () => ({ data: [] });
+        axiosMock.put = async () => ({ data: [] });
+        return axiosMock;
+    }
+    if (request === 'mqtt') {
+        return { connect: () => ({ on: () => {}, end: () => {}, publish: () => {}, connected: false }) };
+    }
+
+    return originalLoad(request, parent, isMain);
+};
+
 const configManager = require('../lib/config');
 const routes = require('../lib/routes');
+
+test('Routes - reservierte Discovery/API Pfade werden nicht als Loxone-Befehl behandelt', () => {
+    assert.strictEqual(routes._internals.isReservedDiscoveryPath('api'), true);
+    assert.strictEqual(routes._internals.isReservedDiscoveryPath('description.xml'), true);
+    assert.strictEqual(routes._internals.isReservedDiscoveryPath('upnp'), true);
+    assert.strictEqual(routes._internals.isReservedDiscoveryPath('wohnzimmer'), false);
+});
 
 test('Routes - XML Exports escape special characters', async (t) => {
     // Setup dummy mapping with special characters

@@ -202,6 +202,46 @@ button.add-btn {
 .del-btn { background: transparent; border: 1px solid var(--border); color: var(--text-muted); padding: 5px 10px; border-radius: 6px; cursor: pointer; }
 .info-btn { background: transparent; border: none; padding: 0 10px; font-size: 1.2em; cursor: pointer; opacity: 0.6; }
 .info-btn:hover { opacity: 1; }
+.setting-label { display: inline-flex; align-items: center; gap: 6px; }
+.setting-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    cursor: help;
+    position: relative;
+}
+.setting-help::after {
+    content: attr(data-tip);
+    display: none;
+    position: absolute;
+    z-index: 50;
+    left: 50%;
+    top: 24px;
+    transform: translateX(-50%);
+    width: min(300px, 80vw);
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--text-main);
+    color: var(--bg);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+    font-size: 0.78rem;
+    line-height: 1.35;
+    font-weight: 500;
+    text-align: left;
+    white-space: normal;
+}
+.setting-help:hover::after,
+.setting-help:focus::after {
+    display: block;
+}
 
 .color-dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,0.2); margin-left: 5px; vertical-align: middle; }
 
