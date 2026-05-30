@@ -12,9 +12,10 @@
 - **Effekt-Alias:** `fireplace` wird als Alias fuer den Hue Effekt `fire` akzeptiert.
 - **Ruhigere EventStream-Logs:** Der Watchdog startet den Hue EventStream nicht mehr bereits nach 60-90 Sekunden ohne Events neu. Das reduziert unnoetige Reconnects in ruhigen Installationen.
 - **Discovery-Probe-Schutz:** Reservierte Pfade wie `/api/...`, `/description.xml` oder `/upnp/...` werden nicht mehr versehentlich als Loxone-Befehl behandelt. Das reduziert False-Positive-Risiken bei lokalen Smart-Home-Gerätesuchen.
+- **Hue Rate-Limit Retry:** Kurzzeitige Hue `429` Antworten werden mit kleinem Backoff erneut versucht, damit einzelne Lampenbefehle bei Lastspitzen nicht sofort verloren gehen.
 
 ### Tests
-- Tests fuer die Aufloesung von Hue Raeumen/Zonen auf einzelne Lampen, direkte Multi-Sync-Gruppenziele, Alles-Effektziele, EventStream-Watchdog-Timing, reservierte Discovery-Pfade und die Uebernahme der Multi-Sync-Zuordnung bei Gruppen-Effekten ergaenzt.
+- Tests fuer die Aufloesung von Hue Raeumen/Zonen auf einzelne Lampen, direkte Multi-Sync-Gruppenziele, Alles-Effektziele, EventStream-Watchdog-Timing, Hue Rate-Limit-Retry, reservierte Discovery-Pfade und die Uebernahme der Multi-Sync-Zuordnung bei Gruppen-Effekten ergaenzt.
 
 ## [2.5.0] - 2026-05-18
 ### New Features

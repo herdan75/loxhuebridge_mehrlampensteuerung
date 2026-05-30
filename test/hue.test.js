@@ -138,6 +138,30 @@ test('EventStream Watchdog startet nach konfigurierter Ruhezeit neu', () => {
     );
 });
 
+test('Hue Rate-Limit Retry erkennt 429 und nutzt Backoff', () => {
+    const error = {
+        response: {
+            status: 429,
+            headers: {}
+        }
+    };
+
+    assert.strictEqual(_internals.isHueRateLimitError(error), true);
+    assert.strictEqual(_internals.getHueRateLimitRetryDelayMs(error, 0), 250);
+    assert.strictEqual(_internals.getHueRateLimitRetryDelayMs(error, 1), 750);
+});
+
+test('Hue Rate-Limit Retry respektiert Retry-After Header', () => {
+    const error = {
+        response: {
+            status: 429,
+            headers: { 'retry-after': '2' }
+        }
+    };
+
+    assert.strictEqual(_internals.getHueRateLimitRetryDelayMs(error, 0), 2000);
+});
+
 // --- Mehrlampensynchronisierung ---
 test('Multi-Sync Scheduler respektiert maximale Hue Befehlsrate', () => {
     const items = Array.from({ length: 11 }, (_, index) => ({
