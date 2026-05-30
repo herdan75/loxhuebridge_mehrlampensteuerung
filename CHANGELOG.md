@@ -1,34 +1,34 @@
 ## [2.5.1-dev] - 2026-05-19
 ### New Features
-- **Hue Effekt-Fallback fuer Gruppen/Raeume/Zonen:** Effektbefehle wie `candle`, `fire`, `prism`, `sparkle`, `opal`, `glisten`, `noeffect` und `sunrise` werden bei Hue Gruppen/Raeumen/Zonen intern auf die enthaltenen einzelnen Hue-Lampen aufgeloest.
-- **Multi-Sync Timing fuer Gruppen-Effekte:** Enthaltene Lampen mit loxHueBridge Multi-Sync-Gruppe A-E verwenden beim Effekt-Fallback die Timing- und Rate-Einstellungen ihrer Gruppe.
-- **Direkte Multi-Sync Effektziele:** Gruppen A-E koennen direkt per URL angesteuert werden, z. B. `/gruppe_a/candle`, `/group_b/fire` oder ueber den frei vergebenen Gruppennamen.
+- **Hue Effekt-Fallback für Gruppen/Räume/Zonen:** Effektbefehle wie `candle`, `fire`, `prism`, `sparkle`, `opal`, `glisten`, `noeffect` und `sunrise` werden bei Hue Gruppen/Räumen/Zonen intern auf die enthaltenen einzelnen Hue-Lampen aufgelöst.
+- **Multi-Sync Timing für Gruppen-Effekte:** Enthaltene Lampen mit loxHueBridge Multi-Sync-Gruppe A-E verwenden beim Effekt-Fallback die Timing- und Rate-Einstellungen ihrer Gruppe.
+- **Direkte Multi-Sync Effektziele:** Gruppen A-E können direkt per URL angesteuert werden, z. B. `/gruppe_a/candle`, `/group_b/fire` oder über den frei vergebenen Gruppennamen.
 - **Alles-Effekt:** `/all/candle`, `/alles/fire` und `/all/sunrise/30` verteilen Effekte auf alle einzeln gemappten Hue-Lampen.
 - **Einstellbarer EventStream Watchdog:** Der Neustart bei ausbleibenden Hue Events ist im Systembereich einstellbar. Standard ist 10 Minuten.
 - **Info-Hilfen im UI:** System-, MQTT- und Mehrlampen-Einstellungen haben kleine Info-Buttons mit Kurzbeschreibung der jeweiligen Funktion.
 
 ### Verbesserungen
-- **API-konforme Effektsteuerung:** Gruppen-Effekte werden nicht mehr gegen `grouped_light` ausgefuehrt, sondern einzeln gegen `/resource/light`, wie es die Hue API v2 fuer Effekte erwartet.
-- **Sicherer Standard fuer nicht gemappte Lampen:** Lampen, die in einer Hue-Gruppe enthalten, aber nicht einzeln in loxHueBridge gemappt sind, werden trotzdem mit konservativem Timing angesteuert.
-- **Effekt-Alias:** `fireplace` wird als Alias fuer den Hue Effekt `fire` akzeptiert.
-- **Ruhigere EventStream-Logs:** Der Watchdog startet den Hue EventStream nicht mehr bereits nach 60-90 Sekunden ohne Events neu. Das reduziert unnoetige Reconnects in ruhigen Installationen.
+- **API-konforme Effektsteuerung:** Gruppen-Effekte werden nicht mehr gegen `grouped_light` ausgeführt, sondern einzeln gegen `/resource/light`, wie es die Hue API v2 für Effekte erwartet.
+- **Sicherer Standard für nicht gemappte Lampen:** Lampen, die in einer Hue-Gruppe enthalten, aber nicht einzeln in loxHueBridge gemappt sind, werden trotzdem mit konservativem Timing angesteuert.
+- **Effekt-Alias:** `fireplace` wird als Alias für den Hue Effekt `fire` akzeptiert.
+- **Ruhigere EventStream-Logs:** Der Watchdog startet den Hue EventStream nicht mehr bereits nach 60-90 Sekunden ohne Events neu. Das reduziert unnötige Reconnects in ruhigen Installationen.
 - **Discovery-Probe-Schutz:** Reservierte Pfade wie `/api/...`, `/description.xml` oder `/upnp/...` werden nicht mehr versehentlich als Loxone-Befehl behandelt. Das reduziert False-Positive-Risiken bei lokalen Smart-Home-Gerätesuchen.
 - **Hue Rate-Limit Retry:** Kurzzeitige Hue `429` Antworten werden mit kleinem Backoff erneut versucht, damit einzelne Lampenbefehle bei Lastspitzen nicht sofort verloren gehen.
 
 ### Tests
-- Tests fuer die Aufloesung von Hue Raeumen/Zonen auf einzelne Lampen, direkte Multi-Sync-Gruppenziele, Alles-Effektziele, EventStream-Watchdog-Timing, Hue Rate-Limit-Retry, reservierte Discovery-Pfade und die Uebernahme der Multi-Sync-Zuordnung bei Gruppen-Effekten ergaenzt.
+- Tests für die Auflösung von Hue Räumen/Zonen auf einzelne Lampen, direkte Multi-Sync-Gruppenziele, Alles-Effektziele, EventStream-Watchdog-Timing, Hue Rate-Limit-Retry, reservierte Discovery-Pfade und die Übernahme der Multi-Sync-Zuordnung bei Gruppen-Effekten ergänzt.
 
 ## [2.5.0] - 2026-05-18
 ### New Features
-- **Gruppierte Mehrlampensynchronisierung:** Einzelne Hue-Lampen koennen jetzt einer von fuenf neutralen Multi-Sync-Gruppen A-E zugeordnet werden. Damit lassen sich mehrere Raeume oder Lampenbereiche unabhaengig voneinander abstimmen.
-- **Freie Gruppennamen:** Die Gruppen A-E koennen im Systembereich individuell benannt werden, z. B. Wohnzimmer, Buero oder Kueche.
-- **Eigene Gruppen-Settings:** Jede Gruppe hat eigene Werte fuer Sammelfenster, Batchgroesse, Batch-Pause und maximale Lichtbefehle pro Sekunde.
+- **Gruppierte Mehrlampensynchronisierung:** Einzelne Hue-Lampen können jetzt einer von fünf neutralen Multi-Sync-Gruppen A-E zugeordnet werden. Damit lassen sich mehrere Räume oder Lampenbereiche unabhängig voneinander abstimmen.
+- **Freie Gruppennamen:** Die Gruppen A-E können im Systembereich individuell benannt werden, z. B. Wohnzimmer, Büro oder Küche.
+- **Eigene Gruppen-Settings:** Jede Gruppe hat eigene Werte für Sammelfenster, Batchgröße, Batch-Pause und maximale Lichtbefehle pro Sekunde.
 - **Timing-Test pro Gruppe:** Die Simulation zeigt je Gruppe aktive Lampen, Mindestabstand, geschaetzte Zeit bis zum letzten Befehl und effektive Befehlsrate.
-- **Globale Bridge-Sicherheitsgrenze:** `Max. Bridge-Befehle/s` begrenzt die Gesamtlast ueber alle Multi-Sync-Gruppen hinweg, damit gleichzeitig ausloesende Raeume die Hue Bridge nicht gemeinsam ueberlasten.
+- **Globale Bridge-Sicherheitsgrenze:** `Max. Bridge-Befehle/s` begrenzt die Gesamtlast über alle Multi-Sync-Gruppen hinweg, damit gleichzeitig auslösende Räume die Hue Bridge nicht gemeinsam überlasten.
 
 ### Verbesserungen
-- **Rueckwaertskompatibilitaet:** Bestehende Lampen mit aktivierter Mehrlampensynchronisierung, aber ohne Gruppenzuordnung, laufen automatisch in Gruppe A weiter.
-- **Normale Lampen bleiben unveraendert:** Lampen ohne aktivierte Mehrlampensynchronisierung laufen weiterhin ueber die normale Queue/Drosselung ausserhalb des Multi-Sync-Ablaufs.
+- **Rückwärtskompatibilität:** Bestehende Lampen mit aktivierter Mehrlampensynchronisierung, aber ohne Gruppenzuordnung, laufen automatisch in Gruppe A weiter.
+- **Normale Lampen bleiben unverändert:** Lampen ohne aktivierte Mehrlampensynchronisierung laufen weiterhin über die normale Queue/Drosselung außerhalb des Multi-Sync-Ablaufs.
 - **README erweitert:** Gruppenlogik, Gruppenzuordnung, Timing-Test und Bridge-Gesamtlimit sind dokumentiert.
 
 ### Tests
