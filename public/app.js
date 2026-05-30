@@ -474,6 +474,10 @@ let currentTab = 'light';
             .replace(/'/g, '&#039;');
     }
 
+    function infoLabel(label, tip) {
+        return `<span class="setting-label">${escapeHtml(label)} <span class="setting-help" tabindex="0" data-tip="${escapeHtml(tip)}">i</span></span>`;
+    }
+
     function getMultiSyncFormSettings(groupId = 'a') {
         const numberValue = (id, fallback) => {
             const el = document.getElementById(id);
@@ -559,7 +563,7 @@ let currentTab = 'light';
         const groups = cfg.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}`, syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 10 }));
         let html = `
             <tr>
-                <td>Max. Bridge-Befehle/s</td>
+                <td>${infoLabel('Max. Bridge-Befehle/s', 'Globale Obergrenze fuer alle Hue-Befehle aus Multi-Sync-Gruppen. Senken, wenn HUE RATE LIMIT 429 erscheint oder mehrere Gruppen gleichzeitig schalten.')}</td>
                 <td>
                     <div class="slider-container">
                         <input type="range" id="sys_multiBridgeMaxCommandsPerSecond" min="1" max="100" step="1" value="${cfg.bridgeMaxCommandsPerSecond ?? 30}" oninput="document.getElementById('val_multiBridgeMaxRate').innerText = this.value + ' /s'; renderMultiSyncPreview();">
@@ -579,12 +583,12 @@ let currentTab = 'light';
                         <details style="border:1px solid var(--border); border-radius:6px; padding:10px; background:#fafafa;" ${id === 'a' ? 'open' : ''}>
                             <summary style="cursor:pointer; font-weight:bold;">${escapeHtml(group.name || label)}</summary>
                             <table class="settings-table" style="margin-top:10px;">
-                                <tr><td>Name</td><td><input id="sys_multiName_${id}" value="${escapeHtml(group.name || label)}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
-                                <tr><td>Sammelfenster</td><td><div class="slider-container"><input type="range" id="sys_multiSyncWindowMs_${id}" min="50" max="500" step="10" value="${group.syncWindowMs ?? 120}" oninput="document.getElementById('val_multiSyncWindow_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSyncWindow_${id}" class="slider-val">${group.syncWindowMs ?? 120} ms</span></div></td></tr>
-                                <tr><td>Batchgroesse</td><td><input type="number" id="sys_multiBatchSize_${id}" min="1" max="20" step="1" value="${group.batchSize ?? 4}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
-                                <tr><td>Batch-Pause</td><td><div class="slider-container"><input type="range" id="sys_multiBatchDelayMs_${id}" min="0" max="300" step="10" value="${group.batchDelayMs ?? 30}" oninput="document.getElementById('val_multiBatchDelay_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiBatchDelay_${id}" class="slider-val">${group.batchDelayMs ?? 30} ms</span></div></td></tr>
-                                <tr><td>Max. Lichtbefehle/s</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
-                                <tr><td>Timing-Test</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
+                                <tr><td>${infoLabel('Name', 'Freier Anzeigename der Multi-Sync-Gruppe. Der Name kann auch als Effektziel verwendet werden, wenn kein gleichnamiges Loxone-Mapping existiert.')}</td><td><input id="sys_multiName_${id}" value="${escapeHtml(group.name || label)}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
+                                <tr><td>${infoLabel('Sammelfenster', 'Zeitfenster, in dem schnell eintreffende Loxone-Befehle gesammelt werden. Hoeher = stabiler bei Szenen, aber etwas spaeterer Start.')}</td><td><div class="slider-container"><input type="range" id="sys_multiSyncWindowMs_${id}" min="50" max="500" step="10" value="${group.syncWindowMs ?? 120}" oninput="document.getElementById('val_multiSyncWindow_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSyncWindow_${id}" class="slider-val">${group.syncWindowMs ?? 120} ms</span></div></td></tr>
+                                <tr><td>${infoLabel('Batchgroesse', 'Anzahl Lampen, nach denen eine zusaetzliche Batch-Pause eingeplant wird. Bei 10 Lampen und Batchgroesse 10 gibt es praktisch keinen Zwischenstopp.')}</td><td><input type="number" id="sys_multiBatchSize_${id}" min="1" max="20" step="1" value="${group.batchSize ?? 4}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
+                                <tr><td>${infoLabel('Batch-Pause', 'Zusaetzliche Pause nach jedem Batch. Hilft nur, wenn die Batchgroesse kleiner ist als die Lampenanzahl. Bei Batchgroesse 10 und 10 Lampen meist 0 ms sinnvoll.')}</td><td><div class="slider-container"><input type="range" id="sys_multiBatchDelayMs_${id}" min="0" max="300" step="10" value="${group.batchDelayMs ?? 30}" oninput="document.getElementById('val_multiBatchDelay_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiBatchDelay_${id}" class="slider-val">${group.batchDelayMs ?? 30} ms</span></div></td></tr>
+                                <tr><td>${infoLabel('Max. Lichtbefehle/s', 'Obergrenze fuer diese Gruppe. Wichtigster Wert gegen Hue 429. Niedriger = stabiler, hoeher = schneller. Typisch 15-20/s testen.')}</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
+                                <tr><td>${infoLabel('Timing-Test', 'Simulation fuer diese Gruppe: Anzahl aktiver Lampen, Mindestabstand, Zeitpunkt des letzten Befehls und effektive Befehlsrate.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
                             </table>
                         </details>
                     </td>
@@ -635,11 +639,11 @@ let currentTab = 'light';
             table.innerHTML = `
                 <tr><td colspan="2" style="background:#eee;font-weight:bold">Allgemein</td></tr>
                 <tr><td>Version</td><td><span class="badge" style="background:#333;color:#fff">${s.version}</span></td></tr>
-                <tr><td>Loxone IP</td><td><input id="sys_loxIp" value="${v(s.loxone_ip)}"></td></tr>
-                <tr><td>UDP Port</td><td><input type="number" id="sys_loxPort" value="${v(s.loxone_port)}"></td></tr>
+                <tr><td>${infoLabel('Loxone IP', 'IP-Adresse des Loxone Miniservers fuer UDP-Rueckmeldungen von Hue Statusaenderungen.')}</td><td><input id="sys_loxIp" value="${v(s.loxone_ip)}"></td></tr>
+                <tr><td>${infoLabel('UDP Port', 'UDP-Port am Loxone Miniserver, auf den Statusmeldungen gesendet werden. Muss zur virtuellen UDP-Eingangskonfiguration passen.')}</td><td><input type="number" id="sys_loxPort" value="${v(s.loxone_port)}"></td></tr>
                 
                 <tr>
-                    <td>Übergangszeit</td>
+                    <td>${infoLabel('Uebergangszeit', 'Hue Dynamics Dauer fuer weiche Uebergaenge. Hoeher wirkt sanfter, aber traeger. Fuer schnelle Szenen eher 0-100 ms testen.')}</td>
                     <td>
                         <div class="slider-container">
                             <input type="range" id="sys_transition" min="0" max="1000" step="50" value="${v(s.transitionTime)}" oninput="document.getElementById('val_trans').innerText = this.value + ' ms'">
@@ -648,7 +652,7 @@ let currentTab = 'light';
                     </td>
                 </tr>
                 <tr>
-                    <td>Drosselung</td>
+                    <td>${infoLabel('Drosselung', 'Pause der normalen Hue-Queue ausserhalb Multi-Sync. Hoeher reduziert Last, betrifft normale Einzel- und Gruppenbefehle.')}</td>
                     <td>
                         <div class="slider-container">
                             <input type="range" id="sys_throttle" min="0" max="1000" step="50" value="${v(s.throttleTime)}" oninput="document.getElementById('val_thro').innerText = this.value + ' ms'">
@@ -657,7 +661,7 @@ let currentTab = 'light';
                     </td>
                 </tr>
                 <tr>
-                    <td>EventStream Watchdog</td>
+                    <td>${infoLabel('EventStream Watchdog', 'Startet den Hue EventStream neu, wenn laengere Zeit keine Daten kommen. 10 min ist Standard; niedriger nur bei echten Aussetzern.')}</td>
                     <td>
                         <div class="slider-container">
                             <input type="range" id="sys_eventStreamWatchdogTimeoutSeconds" min="60" max="3600" step="60" value="${v(s.eventStreamWatchdogTimeoutSeconds ?? 600)}" oninput="document.getElementById('val_eventWatchdog').innerText = Math.round(this.value / 60) + ' min'">
@@ -711,9 +715,9 @@ let currentTab = 'light';
                 </tr>
                 -->
 
-                <tr><td>Debug Modus</td><td><input type="checkbox" id="sys_debug" ${s.debug?'checked':''}></td></tr>
+                <tr><td>${infoLabel('Debug Modus', 'Schreibt detaillierte IN/OUT/Event-Logs. Hilfreich zum Testen, im Dauerbetrieb bei vielen Befehlen eher deaktivieren.')}</td><td><input type="checkbox" id="sys_debug" ${s.debug?'checked':''}></td></tr>
                 <tr>
-                    <td>SD-Card Mode</td>
+                    <td>${infoLabel('SD-Card Mode', 'Deaktiviert Schreibzugriffe auf logs.db und haelt Logs nur im RAM. Sinnvoll auf SD-Karten-Systemen.')}</td>
                     <td>
                         <input type="checkbox" id="sys_disableLogDisk" ${s.disableLogDisk?'checked':''}>
                         <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Deaktiviert Schreibzugriffe auf logs.db.</div>
@@ -721,12 +725,12 @@ let currentTab = 'light';
                 </tr>
 
                 <tr><td colspan="2" style="background:#eee;font-weight:bold">MQTT</td></tr>
-                <tr><td>Aktivieren</td><td><input type="checkbox" id="sys_mqttEnabled" ${s.mqttEnabled?'checked':''}></td></tr>
-                <tr><td>Broker IP</td><td><input id="sys_mqttBroker" value="${v(s.mqttBroker)}"></td></tr>
-                <tr><td>Port</td><td><input type="number" id="sys_mqttPort" value="${v(s.mqttPort)||1883}"></td></tr>
-                <tr><td>User</td><td><input id="sys_mqttUser" value="${v(s.mqttUser)}"></td></tr>
-                <tr><td>Passwort</td><td><input type="password" id="sys_mqttPass" value="${v(s.mqttPass)}"></td></tr>
-                <tr><td>Prefix</td><td><input id="sys_mqttPrefix" value="${v(s.mqttPrefix)||'loxhue'}"></td></tr>
+                <tr><td>${infoLabel('Aktivieren', 'Aktiviert parallele Statusausgabe an einen MQTT Broker.')}</td><td><input type="checkbox" id="sys_mqttEnabled" ${s.mqttEnabled?'checked':''}></td></tr>
+                <tr><td>${infoLabel('Broker IP', 'Adresse des MQTT Brokers, z. B. Mosquitto oder Home Assistant MQTT.')}</td><td><input id="sys_mqttBroker" value="${v(s.mqttBroker)}"></td></tr>
+                <tr><td>${infoLabel('Port', 'MQTT-Port. Standard ist 1883 ohne TLS.')}</td><td><input type="number" id="sys_mqttPort" value="${v(s.mqttPort)||1883}"></td></tr>
+                <tr><td>${infoLabel('User', 'Optionaler MQTT Benutzername.')}</td><td><input id="sys_mqttUser" value="${v(s.mqttUser)}"></td></tr>
+                <tr><td>${infoLabel('Passwort', 'Optionales MQTT Passwort.')}</td><td><input type="password" id="sys_mqttPass" value="${v(s.mqttPass)}"></td></tr>
+                <tr><td>${infoLabel('Prefix', 'Topic-Prefix fuer MQTT Statusmeldungen, z. B. loxhue/light/wohnzimmer/on.')}</td><td><input id="sys_mqttPrefix" value="${v(s.mqttPrefix)||'loxhue'}"></td></tr>
             `;
             renderMultiSyncPreview();
         } catch(e){ console.error("Fehler bei loadSettings:", e); }

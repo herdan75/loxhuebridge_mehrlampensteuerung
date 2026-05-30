@@ -5,6 +5,7 @@
 - **Direkte Multi-Sync Effektziele:** Gruppen A-E koennen direkt per URL angesteuert werden, z. B. `/gruppe_a/candle`, `/group_b/fire` oder ueber den frei vergebenen Gruppennamen.
 - **Alles-Effekt:** `/all/candle`, `/alles/fire` und `/all/sunrise/30` verteilen Effekte auf alle einzeln gemappten Hue-Lampen.
 - **Einstellbarer EventStream Watchdog:** Der Neustart bei ausbleibenden Hue Events ist im Systembereich einstellbar. Standard ist 10 Minuten.
+- **Info-Hilfen im UI:** System-, MQTT- und Mehrlampen-Einstellungen haben kleine Info-Buttons mit Kurzbeschreibung der jeweiligen Funktion.
 
 ### Verbesserungen
 - **API-konforme Effektsteuerung:** Gruppen-Effekte werden nicht mehr gegen `grouped_light` ausgefuehrt, sondern einzeln gegen `/resource/light`, wie es die Hue API v2 fuer Effekte erwartet.
