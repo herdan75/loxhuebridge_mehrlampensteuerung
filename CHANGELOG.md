@@ -1,3 +1,7 @@
+## [2.5.6-dev] - In Entwicklung
+### Entwicklung
+- Entwicklungszweig nach Release 2.5.5 fortgeführt.
+
 ## [2.5.5] - 2026-06-22
 ### Bugfixes
 - **Multi-Sync verwirft keine anderen Lampen mehr:** Geplante Lampenbefehle werden nicht mehr gruppenweit invalidiert. Neue Befehle ersetzen nur ältere Timer derselben Lampen-UUID.
