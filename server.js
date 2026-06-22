@@ -22,6 +22,7 @@ process.on('uncaughtException', (err) => {
 });
 
 configManager.load();
+hueManager.applyRuntimeConfig();
 logger.init(configManager.dataDir, configManager.config.disableLogDisk, configManager.config.debug);
 
 if (logger.dbError) logger.error(`DB Init fehlgeschlagen: ${logger.dbError}. RAM-Modus aktiv.`, 'SYSTEM');

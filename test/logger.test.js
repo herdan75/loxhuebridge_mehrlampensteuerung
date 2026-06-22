@@ -23,6 +23,13 @@ test('Logger - RAM Modus', (t) => {
 
 test('Logger - SQLite Modus', (t) => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'loxhue-test-'));
+    t.after(() => {
+        const db = logger.getRawDb();
+        if (db) db.close();
+        logger.db = null;
+        logger.insertLogStmt = null;
+    });
+
     logger.init(tempDir, false, true);
     
     assert.strictEqual(logger.disableLogDisk, false);
@@ -37,6 +44,11 @@ test('Logger - SQLite Modus', (t) => {
     assert.strictEqual(logs[1].msg, 'SQLite Info Entry');
     
     // Cleanup
+    const db = logger.getRawDb();
+    if (db) db.close();
+    logger.db = null;
+    logger.insertLogStmt = null;
+
     const dbPath = path.join(tempDir, 'logs.db');
     if(fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
 });

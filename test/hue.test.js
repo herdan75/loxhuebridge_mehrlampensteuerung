@@ -39,7 +39,8 @@ const {
     buildEffectTargets,
     buildMultiSyncGroupEffectTargets,
     buildAllLightEffectTargets,
-    normalizeCommandName
+    normalizeCommandName,
+    getRuntimeThrottleTimeMs
 } = _internals;
 
 // --- Farb-Mathematik ---
@@ -160,6 +161,47 @@ test('Hue Rate-Limit Retry respektiert Retry-After Header', () => {
     };
 
     assert.strictEqual(_internals.getHueRateLimitRetryDelayMs(error, 0), 2000);
+});
+
+test('Runtime-Konfiguration setzt Light Queue Delay aus throttleTime', () => {
+    configManager.config.throttleTime = 250;
+    hueManager.REQUEST_QUEUES.light.delayMs = 100;
+    hueManager.REQUEST_QUEUES.grouped_light.delayMs = 1100;
+
+    hueManager.applyRuntimeConfig();
+
+    assert.strictEqual(hueManager.REQUEST_QUEUES.light.delayMs, 250);
+    assert.strictEqual(getRuntimeThrottleTimeMs(), 250);
+});
+
+test('Runtime-Konfiguration setzt grouped_light Queue mindestens auf 1000 ms', () => {
+    configManager.config.throttleTime = 250;
+
+    hueManager.applyRuntimeConfig();
+
+    assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1000);
+
+    configManager.config.throttleTime = 1500;
+    hueManager.applyRuntimeConfig();
+
+    assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1500);
+});
+
+test('Runtime-Konfiguration nutzt sichere Defaults bei ungueltiger throttleTime', () => {
+    configManager.config.throttleTime = 'ungueltig';
+    hueManager.REQUEST_QUEUES.light.delayMs = 999;
+    hueManager.REQUEST_QUEUES.grouped_light.delayMs = 999;
+
+    hueManager.applyRuntimeConfig();
+
+    assert.strictEqual(hueManager.REQUEST_QUEUES.light.delayMs, 100);
+    assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1000);
+
+    configManager.config.throttleTime = -50;
+    hueManager.applyRuntimeConfig();
+
+    assert.strictEqual(hueManager.REQUEST_QUEUES.light.delayMs, 100);
+    assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1000);
 });
 
 // --- Mehrlampensynchronisierung ---
