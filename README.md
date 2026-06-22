@@ -427,7 +427,9 @@ Adresse: `http://<IP-DER-BRIDGE>:8555`
 | **Ausschalten** | `/kueche/<v>` | Schaltet aus bei Wert 0 |
 | **Dimmen** | `/kueche/<v>` | Werte 2-100 % |
 | **Warmweiß** | `/kueche/<v>` | Smart Actuator Logik, z. B. `201002700` |
-| **RGB** | `/kueche/<v>` | RGB Logik: R + G*1000 + B*1000000 |
+| **RGB** | `/kueche/<v>` | RGB Logik: R + G*1000 + B*1000000, jede Komponente 0-100 |
+
+RGB-Werte werden strikt validiert. R, G und B müssen jeweils im Bereich `0..100` liegen. Werte außerhalb dieses Bereichs werden abgelehnt, damit Hue keine ungültige Helligkeit größer als 100 erhält.
 
 **Sensoren (UDP Eingang):**
 Port: 7000, falls nicht geändert.

@@ -47,8 +47,13 @@ const {
     getRuntimeThrottleTimeMs,
     getHueRequestTimeoutMs,
     parseLoxoneCommandValue,
+    parseLoxoneRgbComponents,
     putHueWithRateLimitRetry
 } = _internals;
+
+function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 // --- Farb-Mathematik ---
 test('kelvinToMirek: Standard-Werte', () => {
@@ -260,6 +265,63 @@ test('executeCommand behandelt unbekannte Textwerte nicht als Ausschalten', asyn
     );
 
     assert.strictEqual(axiosPutCalls.length, 0);
+});
+
+test('RGB-Komponenten werden auf 0..100 validiert', () => {
+    assert.deepStrictEqual(parseLoxoneRgbComponents(50060080, '50060080'), {
+        r: 80,
+        g: 60,
+        b: 50,
+        max: 80
+    });
+
+    assert.throws(() => parseLoxoneRgbComponents(101, '101'), /außerhalb 0\.\.100/);
+    assert.throws(() => parseLoxoneRgbComponents(101000000, '101000000'), /außerhalb 0\.\.100/);
+});
+
+test('executeCommand sendet fuer gueltiges RGB keine Brightness ueber 100', async () => {
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.config.transitionTime = 0;
+    hueManager.REQUEST_QUEUES.light.delayMs = 0;
+
+    await hueManager.executeCommand({ hue_uuid: 'light-rgb-valid', hue_type: 'light', loxone_name: 'rgb_valid' }, '50060080');
+    await wait(20);
+
+    assert.strictEqual(axiosPutCalls.length, 1);
+    assert.strictEqual(axiosPutCalls[0].payload.dimming.brightness, 80);
+    assert.ok(axiosPutCalls[0].payload.dimming.brightness <= 100);
+});
+
+test('executeCommand lehnt RGB und Warmweiss mit zu hoher Helligkeit ab', async () => {
+    axiosPutCalls.length = 0;
+
+    await assert.rejects(
+        () => hueManager.executeCommand({ hue_uuid: 'light-rgb-invalid', hue_type: 'light', loxone_name: 'rgb_invalid' }, '101'),
+        error => error.code === 'INVALID_LOXONE_VALUE'
+    );
+
+    await assert.rejects(
+        () => hueManager.executeCommand({ hue_uuid: 'light-ct-invalid', hue_type: 'light', loxone_name: 'ct_invalid' }, '201012700'),
+        error => error.code === 'INVALID_LOXONE_VALUE'
+    );
+
+    assert.strictEqual(axiosPutCalls.length, 0);
+});
+
+test('executeCommand laesst Aus bei Wert 0 unveraendert', async () => {
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.config.transitionTime = 0;
+    hueManager.REQUEST_QUEUES.light.delayMs = 0;
+
+    await hueManager.executeCommand({ hue_uuid: 'light-off-zero', hue_type: 'light', loxone_name: 'off_zero' }, '0');
+    await wait(20);
+
+    assert.strictEqual(axiosPutCalls.length, 1);
+    assert.deepStrictEqual(axiosPutCalls[0].payload, { on: { on: false } });
 });
 
 // --- Mehrlampensynchronisierung ---
