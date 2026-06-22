@@ -55,6 +55,19 @@ function wait(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function setFastMultiSyncConfig() {
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 100,
+        groups: [
+            { id: 'a', name: 'A', syncWindowMs: 10, batchSize: 10, batchDelayMs: 0, maxCommandsPerSecond: 50 },
+            { id: 'b', name: 'B', syncWindowMs: 10, batchSize: 10, batchDelayMs: 0, maxCommandsPerSecond: 50 }
+        ]
+    });
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.config.transitionTime = 0;
+}
+
 // --- Farb-Mathematik ---
 test('kelvinToMirek: Standard-Werte', () => {
     assert.strictEqual(kelvinToMirek(2700), Math.round(1000000 / 2700)); // warmweiß
@@ -365,6 +378,85 @@ test('Multi-Sync Scheduler erlaubt schnellere experimentelle Rate kontrolliert',
             `Abstand ${i} war ${schedule[i].delayMs - schedule[i - 1].delayMs}ms`
         );
     }
+});
+
+test('Multi-Sync Generation verwirft alte geplante Tasks derselben Gruppe', async () => {
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+
+    await hueManager.executeCommand({
+        hue_uuid: 'multi-generation-a',
+        hue_type: 'light',
+        loxone_name: 'multi_generation_a',
+        multi_sync: true,
+        multi_sync_group: 'a',
+        sync_offset_ms: 120
+    }, '40');
+
+    await wait(30);
+
+    await hueManager.executeCommand({
+        hue_uuid: 'multi-generation-a',
+        hue_type: 'light',
+        loxone_name: 'multi_generation_a',
+        multi_sync: true,
+        multi_sync_group: 'a',
+        sync_offset_ms: 0
+    }, '60');
+
+    await wait(220);
+
+    const sentBrightness = axiosPutCalls
+        .filter(call => call.url.includes('multi-generation-a'))
+        .map(call => call.payload.dimming?.brightness);
+
+    assert.deepStrictEqual(sentBrightness, [60]);
+});
+
+test('Multi-Sync Generation ist pro Gruppe isoliert', async () => {
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+
+    await hueManager.executeCommand({
+        hue_uuid: 'multi-generation-a2',
+        hue_type: 'light',
+        loxone_name: 'multi_generation_a2',
+        multi_sync: true,
+        multi_sync_group: 'a',
+        sync_offset_ms: 120
+    }, '40');
+
+    await hueManager.executeCommand({
+        hue_uuid: 'multi-generation-b',
+        hue_type: 'light',
+        loxone_name: 'multi_generation_b',
+        multi_sync: true,
+        multi_sync_group: 'b',
+        sync_offset_ms: 40
+    }, '70');
+
+    await wait(30);
+
+    await hueManager.executeCommand({
+        hue_uuid: 'multi-generation-a2',
+        hue_type: 'light',
+        loxone_name: 'multi_generation_a2',
+        multi_sync: true,
+        multi_sync_group: 'a',
+        sync_offset_ms: 0
+    }, '60');
+
+    await wait(220);
+
+    const byUuid = axiosPutCalls.reduce((acc, call) => {
+        const uuid = call.url.split('/').pop();
+        acc[uuid] = acc[uuid] || [];
+        acc[uuid].push(call.payload.dimming?.brightness);
+        return acc;
+    }, {});
+
+    assert.deepStrictEqual(byUuid['multi-generation-a2'], [60]);
+    assert.deepStrictEqual(byUuid['multi-generation-b'], [70]);
 });
 
 test('Multi-Sync Preview trennt Lampen nach Gruppe', () => {
