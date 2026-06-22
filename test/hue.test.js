@@ -50,6 +50,8 @@ const {
     buildEffectTargets,
     buildMultiSyncGroupEffectTargets,
     buildAllLightEffectTargets,
+    supportsEffect,
+    filterEffectTargetsByCapabilities,
     normalizeCommandName,
     getRuntimeThrottleTimeMs,
     getHueRequestTimeoutMs,
@@ -763,6 +765,46 @@ test('All-Effektziel verwendet nur gemappte Einzel-Lampen und dedupliziert sie',
     const targets = buildAllLightEffectTargets();
 
     assert.deepStrictEqual(targets.map(target => target.uuid), ['light-1', 'light-2']);
+});
+
+test('Effektfähigkeit erlaubt bekannte unterstützte Effekte', () => {
+    const caps = hueManager.getLightCapabilities();
+    caps['effect-light-1'] = {
+        supportedEffects: ['candle', 'fire', 'no_effect'],
+        supportedTimedEffects: ['sunrise']
+    };
+
+    assert.strictEqual(supportsEffect('effect-light-1', 'candle'), true);
+    assert.strictEqual(supportsEffect('effect-light-1', 'sunrise', true), true);
+});
+
+test('Effektfähigkeit überspringt bekannte nicht unterstützte Effekte', () => {
+    const caps = hueManager.getLightCapabilities();
+    caps['effect-light-2'] = {
+        supportedEffects: ['candle'],
+        supportedTimedEffects: []
+    };
+
+    assert.strictEqual(supportsEffect('effect-light-2', 'fire'), false);
+    assert.strictEqual(supportsEffect('effect-light-2', 'sunrise', true), false);
+
+    const filtered = filterEffectTargetsByCapabilities([
+        { uuid: 'effect-light-2', entry: { loxone_name: 'effect_2' } }
+    ], 'fire');
+
+    assert.deepStrictEqual(filtered, []);
+});
+
+test('Effektfähigkeit blockiert unbekannte Capabilities nicht', () => {
+    delete hueManager.getLightCapabilities()['effect-unknown'];
+
+    assert.strictEqual(supportsEffect('effect-unknown', 'candle'), true);
+
+    const filtered = filterEffectTargetsByCapabilities([
+        { uuid: 'effect-unknown', entry: { loxone_name: 'effect_unknown' } }
+    ], 'candle');
+
+    assert.strictEqual(filtered.length, 1);
 });
 
 // --- Effekt-Keyword-Validierung ---
