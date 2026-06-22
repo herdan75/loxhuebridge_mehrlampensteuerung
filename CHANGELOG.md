@@ -1,3 +1,15 @@
+## [2.5.7-dev] - In Entwicklung
+### Bugfixes
+- **Geräte-Details-Modal scrollbar:** Der Inhalt scrollt nun innerhalb des Modals, Header und Button-Zeile bleiben bedienbar.
+- **Sync-Offset zuverlässig speichern:** Geräteeinstellungen werden im Modal als Draft bearbeitet und erst mit "Speichern & schließen" über einen gezielten Mapping-Settings-Endpunkt gespeichert.
+
+### Verbesserungen
+- **Offset-Bedienung verbessert:** Sync-Offset bietet Schnellbuttons (-50, -10, 0, +10, +50) und beschreibt direkt, ob eine Lampe früher oder später gesendet wird.
+- **Timing-Vorschau erweitert:** Die Multi-Sync-Vorschau zeigt nun pro Lampe Offset und geplanten relativen Sendepunkt in Scheduler-Reihenfolge.
+
+### Tests
+- Tests für Mapping-Settings-Endpunkt, Sync-Offset-Validierung, scrollbares Detailmodal und Scheduler-Offset-Reihenfolge ergänzt.
+
 ## [2.5.6-dev] - In Entwicklung
 ### Entwicklung
 - Entwicklungszweig nach Release 2.5.5 fortgeführt.

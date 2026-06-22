@@ -339,6 +339,8 @@ input:checked + .slider:before { transform: translateX(18px); }
     align-items: center; 
     justify-content: center; 
     backdrop-filter: blur(3px); 
+    padding: 16px;
+    box-sizing: border-box;
 }
 
 .modal-box { 
@@ -348,22 +350,53 @@ input:checked + .slider:before { transform: translateX(18px); }
     width: 90%; 
     max-width: 500px; 
     box-shadow: 0 20px 50px rgba(0,0,0,0.3); 
-    max-height: 80vh; 
+    max-height: calc(100dvh - 32px); 
     display: flex; 
     flex-direction: column; 
+    min-height: 0;
+    box-sizing: border-box;
 }
 
-.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.details-modal-box { max-width: 560px; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex: 0 0 auto; }
+.modal-body { overflow-y: auto; flex: 1 1 auto; min-height: 0; padding-right: 4px; }
 .modal-list { overflow-y: auto; flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 20px; }
 
 .modal-item { display: flex; align-items: center; padding: 10px; border-bottom: 1px solid var(--border); justify-content: flex-start; text-align: left; }
 .modal-item:last-child { border-bottom: none; }
 .modal-item div { flex: 1; }
 
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; flex: 0 0 auto; }
+.modal-actions-sticky { align-items: center; border-top: 1px solid var(--border); margin-top: 16px; padding-top: 14px; }
+.modal-status { flex: 1; color: var(--accent); font-size: 0.85rem; min-height: 1.2em; }
 .btn-sec { background: transparent; border: 1px solid var(--border); color: var(--text-main); padding: 10px 20px; border-radius: 8px; cursor: pointer; }
 .btn-prim { background: var(--text-main); color: var(--bg); border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; }
 .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font-weight: bold; padding: 0; }
+.offset-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-left: 24px; margin-top: 8px; }
+.offset-btn { background: transparent; border: 1px solid var(--border); color: var(--text-main); border-radius: 6px; padding: 5px 8px; cursor: pointer; font-size: 0.8rem; }
+.offset-btn:hover { border-color: var(--accent); color: var(--accent); }
+.offset-hint { font-size: 0.75rem; color: var(--text-muted); margin-left: 24px; margin-top: 4px; }
+.offset-effect { font-size: 0.8rem; color: var(--accent); margin-left: 24px; margin-top: 6px; font-weight: 600; }
+.toast {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    background: var(--text-main);
+    color: var(--bg);
+    padding: 10px 14px;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.22);
+    z-index: 1200;
+    font-size: 0.9rem;
+}
+
+@media (max-width: 560px) {
+    body { padding: 12px; }
+    .modal-box { width: 100%; padding: 18px; border-radius: 12px; }
+    .modal-actions { flex-wrap: wrap; }
+    .modal-actions .btn-sec,
+    .modal-actions .btn-prim { flex: 1 1 160px; }
+}
 
 /* --- DETAILS TABLE & DIAGNOSTICS --- */
 .details-table { width: 100%; border-collapse: collapse; }

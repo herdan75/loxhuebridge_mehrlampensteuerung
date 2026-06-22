@@ -11,6 +11,7 @@
     const MULTI_SYNC_GROUP_IDS = ['a', 'b', 'c', 'd', 'e'];
     let multiLightControlSettings = { groups: MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}` })) };
     let securitySettings = { authEnabled: false, authUser: 'admin', passwordConfigured: false };
+    let detailsDraft = null;
 
     function debugLog(msg) { console.log(`[UI] ${msg}`); }
 
@@ -462,16 +463,6 @@
         loadMappings(); loadTargets();
     }
 
-    // --- NEU: DYNAMISCHES SPEICHERN FÜR CHECKBOXEN IM MODAL ---
-    async function updateMappingSetting(loxName, key, val) {
-        const entry = mappings.find(m => m.loxone_name === loxName);
-        if (entry) {
-            entry[key] = val;
-            await fetch('/api/mapping', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(mappings) });
-            renderMappings();
-        }
-    }
-
     function escapeHtml(value) {
         return String(value ?? '')
             .replace(/&/g, '&amp;')
@@ -539,28 +530,33 @@
             const items = mappings
                 .filter(m => m.hue_type === 'light' && m.multi_sync === true && (m.multi_sync_group || 'a') === id)
                 .map((entry, index) => {
-                    const offset = Math.max(-500, Math.min(1000, Number(entry.sync_offset_ms) || 0));
-                    const batchDelay = Math.floor(index / settings.batchSize) * settings.batchDelayMs;
-
-                    return { entry, offset, batchDelay, index };
+                    const offset = normalizeSyncOffset(entry.sync_offset_ms, 0);
+                    return { entry, offset, originalIndex: index };
                 });
 
             const activeLights = items.length;
             const commandSpacingMs = Math.ceil(1000 / settings.maxCommandsPerSecond);
             const baseDelayMs = activeLights ? Math.max(0, -Math.min(...items.map(item => item.offset))) : 0;
             let lastDelay = -commandSpacingMs;
-            const delays = items
-                .map(item => ({
-                    requestedDelay: Math.max(0, Math.round(baseDelayMs + item.offset + (item.index * commandSpacingMs) + item.batchDelay))
-                }))
-                .sort((a, b) => a.requestedDelay - b.requestedDelay)
+            const scheduleItems = items
+                .sort((a, b) => {
+                    if (a.offset !== b.offset) return a.offset - b.offset;
+                    return a.originalIndex - b.originalIndex;
+                })
+                .map((item, sortedIndex) => {
+                    const batchDelay = Math.floor(sortedIndex / settings.batchSize) * settings.batchDelayMs;
+                    return {
+                        item,
+                        requestedDelay: Math.max(0, Math.round(baseDelayMs + item.offset + (sortedIndex * commandSpacingMs) + batchDelay))
+                    };
+                })
                 .map(item => {
                     const delay = Math.max(item.requestedDelay, lastDelay + commandSpacingMs);
                     lastDelay = delay;
-                    return delay;
+                    return { ...item, delay };
                 });
 
-            const lastCommandMs = delays.length ? Math.max(...delays) : 0;
+            const lastCommandMs = scheduleItems.length ? Math.max(...scheduleItems.map(item => item.delay)) : 0;
             const totalMs = settings.syncWindowMs + lastCommandMs;
             const effectiveRate = activeLights > 1 && lastCommandMs > 0
                 ? ((activeLights - 1) / (lastCommandMs / 1000)).toFixed(1)
@@ -568,6 +564,17 @@
             const hint = settings.maxCommandsPerSecond <= 10
                 ? 'Hue-konservativ'
                 : (settings.maxCommandsPerSecond <= 25 ? 'Schnell testen' : 'Experimentell');
+            const scheduleHtml = scheduleItems.length
+                ? `<div style="margin-top:8px; max-height:150px; overflow:auto; border-top:1px solid var(--border); padding-top:6px;">
+                    ${scheduleItems.map(schedule => `
+                        <div style="display:grid; grid-template-columns: minmax(0,1fr) 70px 80px; gap:8px; font-size:0.75rem; padding:2px 0;">
+                            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(schedule.item.entry.loxone_name)}</span>
+                            <span>${schedule.item.offset > 0 ? '+' : ''}${schedule.item.offset} ms</span>
+                            <span>${Math.round(settings.syncWindowMs + schedule.delay)} ms</span>
+                        </div>
+                    `).join('')}
+                </div>`
+                : '';
 
             el.innerHTML = `
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap:8px;">
@@ -579,6 +586,7 @@
                 <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
                     Modus: ${hint}. Globale Bridge-Grenze: ${getBridgeMaxCommandsPerSecondFromForm()}/s.
                 </div>
+                ${scheduleHtml}
             `;
         });
     }
@@ -831,12 +839,138 @@
         } catch(e){ console.error("Fehler bei loadSettings:", e); }
     }
 
+    function createDetailsDraft(entry) {
+        const offset = normalizeSyncOffset(entry.sync_offset_ms, 0);
+        return {
+            loxoneName: entry.loxone_name,
+            original: {
+                sync_lox: entry.sync_lox === true,
+                ignore_dynamics: entry.ignore_dynamics === true,
+                multi_sync: entry.multi_sync === true,
+                multi_sync_group: normalizeMultiSyncGroup(entry.multi_sync_group),
+                sync_offset_ms: offset
+            },
+            values: {
+                sync_lox: entry.sync_lox === true,
+                ignore_dynamics: entry.ignore_dynamics === true,
+                multi_sync: entry.multi_sync === true,
+                multi_sync_group: normalizeMultiSyncGroup(entry.multi_sync_group),
+                sync_offset_ms: offset
+            }
+        };
+    }
+
+    function normalizeMultiSyncGroup(value) {
+        const group = String(value || 'a').toLowerCase();
+        return MULTI_SYNC_GROUP_IDS.includes(group) ? group : 'a';
+    }
+
+    function normalizeSyncOffset(value, fallback = null) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return fallback;
+        const rounded = Math.round(number / 10) * 10;
+        return Math.max(-500, Math.min(1000, rounded));
+    }
+
+    function describeSyncOffset(offset) {
+        if (offset < 0) return `Diese Lampe wird ${Math.abs(offset)} ms früher gesendet.`;
+        if (offset > 0) return `Diese Lampe wird ${offset} ms später gesendet.`;
+        return 'Diese Lampe wird ohne zusätzlichen Offset gesendet.';
+    }
+
+    function updateDetailsDraft(key, value) {
+        if (!detailsDraft) return;
+        if (key === 'sync_offset_ms') {
+            const offset = normalizeSyncOffset(value, null);
+            const statusEl = document.getElementById('detailsSaveStatus');
+            if (offset === null) {
+                if (statusEl) statusEl.textContent = 'Sync-Offset ist ungültig.';
+                return;
+            }
+            detailsDraft.values.sync_offset_ms = offset;
+            const input = document.getElementById('details_syncOffset');
+            if (input) input.value = offset;
+            const effect = document.getElementById('details_syncOffsetEffect');
+            if (effect) effect.textContent = describeSyncOffset(offset);
+            if (statusEl) statusEl.textContent = '';
+            return;
+        }
+        if (key === 'multi_sync_group') {
+            detailsDraft.values.multi_sync_group = normalizeMultiSyncGroup(value);
+            return;
+        }
+        detailsDraft.values[key] = value === true;
+    }
+
+    function adjustSyncOffset(delta) {
+        if (!detailsDraft) return;
+        updateDetailsDraft('sync_offset_ms', detailsDraft.values.sync_offset_ms + delta);
+    }
+
+    function setSyncOffset(value) {
+        updateDetailsDraft('sync_offset_ms', value);
+    }
+
+    function detailsDraftChanged() {
+        if (!detailsDraft) return false;
+        return JSON.stringify(detailsDraft.original) !== JSON.stringify(detailsDraft.values);
+    }
+
+    function showToast(message) {
+        const existing = document.querySelector('.toast');
+        if (existing) existing.remove();
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2600);
+    }
+
+    async function saveDetailsSettings() {
+        if (!detailsDraft) return closeModal('detailsModal');
+        const statusEl = document.getElementById('detailsSaveStatus');
+        const offset = normalizeSyncOffset(detailsDraft.values.sync_offset_ms, null);
+        if (offset === null) {
+            if (statusEl) statusEl.textContent = 'Sync-Offset ist ungültig.';
+            return;
+        }
+
+        const body = { ...detailsDraft.values, sync_offset_ms: offset };
+        if (statusEl) statusEl.textContent = 'Speichere...';
+
+        try {
+            const res = await fetch(`/api/mapping/${encodeURIComponent(detailsDraft.loxoneName)}/settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const payload = await res.json();
+            if (!res.ok || !payload.success) throw new Error(payload.error || 'Speichern fehlgeschlagen');
+
+            const index = mappings.findIndex(m => m.loxone_name === detailsDraft.loxoneName);
+            if (index >= 0) mappings[index] = payload.mapping;
+            renderMappings();
+            if (currentTab === 'system') renderMultiSyncPreview();
+            detailsDraft = null;
+            closeModal('detailsModal');
+            showToast('Einstellungen gespeichert');
+        } catch (error) {
+            if (statusEl) statusEl.textContent = error.message;
+        }
+    }
+
+    function closeDetailsModal() {
+        if (detailsDraftChanged() && !confirm('Änderungen verwerfen?')) return;
+        detailsDraft = null;
+        closeModal('detailsModal');
+    }
+
     function showDetails(uuid, loxoneName) {
         const target = targets.find(t => t.uuid === uuid);
         const entry = mappings.find(m => m.loxone_name === loxoneName);
         const currentStatus = status[loxoneName] || {};
         if(!target || !entry) return;
-        const safeLoxoneName = jsArg(loxoneName);
+        detailsDraft = createDetailsDraft(entry);
         const safeHex = safeHexColor(currentStatus.hex);
 
         let content = `<div style="margin-bottom:20px;">`;
@@ -847,10 +981,14 @@
             const supportsDimming = entry.hue_type === 'group' ? true : !!caps.supportsDimming; 
             
             const isStrictOnOff = entry.hue_type === 'light' && !supportsDimming;
-            const ignoreDyn = isStrictOnOff ? true : !!entry.ignore_dynamics;
+            if (isStrictOnOff) {
+                detailsDraft.original.ignore_dynamics = true;
+                detailsDraft.values.ignore_dynamics = true;
+            }
+            const ignoreDyn = isStrictOnOff ? true : detailsDraft.values.ignore_dynamics;
             const disableIgnoreDyn = isStrictOnOff ? 'disabled' : '';
             const groupOptions = (multiLightControlSettings.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}` })))
-                .map(group => `<option value="${group.id}" ${(entry.multi_sync_group || 'a') === group.id ? 'selected' : ''}>${escapeHtml(group.name || `Gruppe ${group.id.toUpperCase()}`)}</option>`)
+                .map(group => `<option value="${group.id}" ${detailsDraft.values.multi_sync_group === group.id ? 'selected' : ''}>${escapeHtml(group.name || `Gruppe ${group.id.toUpperCase()}`)}</option>`)
                 .join('');
 
             content += `
@@ -858,7 +996,7 @@
                 
                 <div class="settings-card">
                     <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                        <input type="checkbox" ${entry.sync_lox ? 'checked' : ''} onchange="updateMappingSetting(${safeLoxoneName}, 'sync_lox', this.checked)"> 
+                        <input type="checkbox" ${detailsDraft.values.sync_lox ? 'checked' : ''} onchange="updateDetailsDraft('sync_lox', this.checked)"> 
                         <span style="font-weight:500;">Loxone Sync</span>
                     </label>
                     <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">Sendet Statusänderungen per UDP an Loxone zurück.</div>
@@ -866,7 +1004,7 @@
 
                 <div class="settings-card" style="opacity: ${isStrictOnOff ? '0.6' : '1'};">
                     <label style="display:flex; align-items:center; gap:10px; cursor:${isStrictOnOff ? 'not-allowed' : 'pointer'};">
-                        <input type="checkbox" ${ignoreDyn ? 'checked' : ''} ${disableIgnoreDyn} onchange="updateMappingSetting(${safeLoxoneName}, 'ignore_dynamics', this.checked)"> 
+                        <input type="checkbox" ${ignoreDyn ? 'checked' : ''} ${disableIgnoreDyn} onchange="updateDetailsDraft('ignore_dynamics', this.checked)"> 
                         <span style="font-weight:500;">Dynamics ignorieren</span>
                     </label>
                     <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">
@@ -876,7 +1014,7 @@
                 
                 <div class="settings-card" style="display:${entry.hue_type === 'light' ? 'block' : 'none'};">
                     <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                        <input type="checkbox" ${entry.multi_sync === true ? 'checked' : ''} onchange="updateMappingSetting(${safeLoxoneName}, 'multi_sync', this.checked)"> 
+                        <input type="checkbox" ${detailsDraft.values.multi_sync === true ? 'checked' : ''} onchange="updateDetailsDraft('multi_sync', this.checked)"> 
                         <span style="font-weight:500;">Mehrlampensynchronisierung</span>
                     </label>
                     <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">
@@ -884,18 +1022,24 @@
                     </div>
                     <div style="display:flex; align-items:center; gap:10px; margin-left:24px; margin-top:10px;">
                         <span style="font-size:0.85rem; color:var(--text-muted); min-width:90px;">Gruppe</span>
-                        <select onchange="updateMappingSetting(${safeLoxoneName}, 'multi_sync_group', this.value)" style="max-width:180px;">
+                        <select onchange="updateDetailsDraft('multi_sync_group', this.value)" style="max-width:180px;">
                             ${groupOptions}
                         </select>
                     </div>
-                    <div style="display:flex; align-items:center; gap:10px; margin-left:24px; margin-top:10px;">
+                    <div style="display:flex; align-items:center; gap:10px; margin-left:24px; margin-top:10px; flex-wrap:wrap;">
                         <span style="font-size:0.85rem; color:var(--text-muted); min-width:90px;">Sync-Offset</span>
-                        <input type="number" min="-500" max="1000" step="10" value="${escapeHtml(entry.sync_offset_ms || 0)}" onchange="updateMappingSetting(${safeLoxoneName}, 'sync_offset_ms', parseInt(this.value) || 0)" style="max-width:120px;">
+                        <input id="details_syncOffset" type="number" min="-500" max="1000" step="10" value="${escapeHtml(detailsDraft.values.sync_offset_ms)}" oninput="updateDetailsDraft('sync_offset_ms', this.value)" style="max-width:120px;">
                         <span style="font-size:0.85rem; color:var(--text-muted);">ms</span>
                     </div>
-                    <div style="font-size:0.75rem; color:var(--text-muted); margin-left:24px; margin-top:4px;">
-                        Negativ = früher senden, positiv = später senden. Empfohlen: zuerst 0 ms, danach in 10-ms-Schritten abstimmen.
+                    <div class="offset-controls">
+                        <button type="button" class="offset-btn" onclick="adjustSyncOffset(-50)">-50</button>
+                        <button type="button" class="offset-btn" onclick="adjustSyncOffset(-10)">-10</button>
+                        <button type="button" class="offset-btn" onclick="setSyncOffset(0)">0</button>
+                        <button type="button" class="offset-btn" onclick="adjustSyncOffset(10)">+10</button>
+                        <button type="button" class="offset-btn" onclick="adjustSyncOffset(50)">+50</button>
                     </div>
+                    <div class="offset-hint">Negativ = früher senden, positiv = später senden. Bereich: -500 bis +1000 ms, in 10-ms-Schritten.</div>
+                    <div id="details_syncOffsetEffect" class="offset-effect">${escapeHtml(describeSyncOffset(detailsDraft.values.sync_offset_ms))}</div>
                 </div>
 
                 <hr style="border:0; border-top:1px solid var(--border); margin: 20px 0;">
@@ -930,6 +1074,8 @@
         content += `<tr><td>UUID</td><td style="font-size:0.8em; font-family:monospace">${escapeHtml(target.uuid)}</td></tr>`;
         content += `</table></div>`;
 
+        const statusEl = document.getElementById('detailsSaveStatus');
+        if (statusEl) statusEl.textContent = '';
         document.getElementById('detailsContent').innerHTML = content;
         document.getElementById('detailsModal').style.display = 'flex';
     }

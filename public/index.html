@@ -119,14 +119,18 @@
 </div>
 
 <div id="detailsModal" class="modal-overlay">
-    <div class="modal-box">
+    <div class="modal-box details-modal-box">
         <div class="modal-header">
             <h2 style="margin:0">Geräte Details</h2>
-            <button class="btn-link" onclick="closeModal('detailsModal')">✕</button>
+            <button class="btn-link" onclick="closeDetailsModal()">✕</button>
         </div>
-        <div id="detailsContent"></div>
-        <div class="modal-actions" style="margin-top:20px">
-            <button class="btn-sec" onclick="closeModal('detailsModal')">Schließen</button>
+        <div class="modal-body">
+            <div id="detailsContent"></div>
+        </div>
+        <div class="modal-actions modal-actions-sticky">
+            <span id="detailsSaveStatus" class="modal-status"></span>
+            <button class="btn-sec" onclick="closeDetailsModal()">Abbrechen</button>
+            <button class="btn-prim" onclick="saveDetailsSettings()">Speichern & schließen</button>
         </div>
     </div>
 </div>

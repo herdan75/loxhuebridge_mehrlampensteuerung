@@ -187,6 +187,104 @@ test('Routes - Backup Redaction entfernt Zugangsdaten', () => {
     assert.strictEqual(redacted.authPasswordHash, '***');
 });
 
+test('Routes - Mapping Settings speichert Sync-Offset und erlaubte Felder', () => {
+    configManager.mapping = [
+        {
+            loxone_name: 'deckenlampe_top',
+            hue_uuid: 'uuid-top',
+            hue_name: 'Hue Decke Top',
+            hue_type: 'light',
+            sync_lox: true,
+            ignore_dynamics: false,
+            multi_sync: false,
+            multi_sync_group: 'a',
+            sync_offset_ms: 0
+        }
+    ];
+
+    const handler = getRouteHandler('/api/mapping/:loxoneName/settings');
+    let payload = null;
+    const res = {
+        json(content) {
+            payload = content;
+            return this;
+        },
+        status() {
+            return this;
+        }
+    };
+
+    handler({
+        params: { loxoneName: 'deckenlampe_top' },
+        body: {
+            sync_lox: false,
+            ignore_dynamics: true,
+            multi_sync: true,
+            multi_sync_group: 'b',
+            sync_offset_ms: -50,
+            hue_uuid: 'evil-change'
+        }
+    }, res);
+
+    assert.strictEqual(payload.success, true);
+    assert.strictEqual(configManager.mapping[0].sync_offset_ms, -50);
+    assert.strictEqual(configManager.mapping[0].multi_sync_group, 'b');
+    assert.strictEqual(configManager.mapping[0].multi_sync, true);
+    assert.strictEqual(configManager.mapping[0].sync_lox, false);
+    assert.strictEqual(configManager.mapping[0].ignore_dynamics, true);
+    assert.strictEqual(configManager.mapping[0].hue_uuid, 'uuid-top');
+});
+
+test('Routes - Mapping Settings validiert und begrenzt Sync-Offset', () => {
+    assert.strictEqual(routes._internals.parseSyncOffsetSetting(-900), -500);
+    assert.strictEqual(routes._internals.parseSyncOffsetSetting(0), 0);
+    assert.strictEqual(routes._internals.parseSyncOffsetSetting(100), 100);
+    assert.strictEqual(routes._internals.parseSyncOffsetSetting(1007), 1000);
+    assert.strictEqual(routes._internals.parseSyncOffsetSetting(23), 20);
+    assert.throws(() => routes._internals.parseSyncOffsetSetting('abc'), /sync_offset_ms/);
+});
+
+test('Routes - Mapping Settings lehnt ungültige Felder ab', () => {
+    configManager.mapping = [
+        {
+            loxone_name: 'wohn_lampe',
+            hue_uuid: 'uuid-wohn',
+            hue_name: 'Hue Wohn',
+            hue_type: 'light',
+            sync_offset_ms: 0
+        }
+    ];
+
+    const handler = getRouteHandler('/api/mapping/:loxoneName/settings');
+    let statusCode = null;
+    let payload = null;
+    const res = {
+        status(code) {
+            statusCode = code;
+            return this;
+        },
+        json(content) {
+            payload = content;
+            return this;
+        }
+    };
+
+    handler({
+        params: { loxoneName: 'wohn_lampe' },
+        body: {
+            sync_lox: true,
+            ignore_dynamics: false,
+            multi_sync: true,
+            multi_sync_group: 'z',
+            sync_offset_ms: 0
+        }
+    }, res);
+
+    assert.strictEqual(statusCode, 400);
+    assert.strictEqual(payload.success, false);
+    assert.strictEqual(configManager.mapping[0].multi_sync_group, undefined);
+});
+
 test('Routes - XML Exports escape special characters', async (t) => {
     // Setup dummy mapping with special characters
     configManager.mapping = [

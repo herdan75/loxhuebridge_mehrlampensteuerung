@@ -645,6 +645,50 @@ test('Multi-Sync Scheduler erlaubt schnellere experimentelle Rate kontrolliert',
     }
 });
 
+test('Multi-Sync Scheduler sortiert negative und positive Offsets korrekt', () => {
+    const items = [
+        { entry: { loxone_name: 'normal', sync_offset_ms: 0 } },
+        { entry: { loxone_name: 'frueher', sync_offset_ms: -50 } },
+        { entry: { loxone_name: 'spaeter', sync_offset_ms: 100 } }
+    ];
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 10,
+        batchDelayMs: 0,
+        maxCommandsPerSecond: 20
+    });
+
+    assert.deepStrictEqual(
+        schedule.map(item => item.item.entry.loxone_name),
+        ['frueher', 'normal', 'spaeter']
+    );
+    assert.ok(schedule.every(item => item.delayMs >= 0));
+});
+
+test('Multi-Sync Scheduler erzwingt Mindestabstand auch bei gleichen Offsets stabil', () => {
+    const items = [
+        { entry: { loxone_name: 'a', sync_offset_ms: -50 } },
+        { entry: { loxone_name: 'b', sync_offset_ms: -50 } },
+        { entry: { loxone_name: 'c', sync_offset_ms: -50 } }
+    ];
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 10,
+        batchDelayMs: 0,
+        maxCommandsPerSecond: 10
+    });
+
+    assert.deepStrictEqual(
+        schedule.map(item => item.item.entry.loxone_name),
+        ['a', 'b', 'c']
+    );
+    for (let i = 1; i < schedule.length; i++) {
+        assert.ok(schedule[i].delayMs - schedule[i - 1].delayMs >= 100);
+    }
+});
+
 test('Multi-Sync Payload-Merge führt kompatible Teilbefehle zusammen', () => {
     assert.deepStrictEqual(
         mergeHuePayload({ on: { on: true } }, { dimming: { brightness: 55 } }),

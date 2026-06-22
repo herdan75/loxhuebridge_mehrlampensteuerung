@@ -19,6 +19,25 @@ test('Frontend escaped Log-Ausgaben vor innerHTML', () => {
     assert.match(appJs, /const level = escapeHtml\(l\.level \|\| ''\);/);
 });
 
+test('Geräte-Details-Modal ist scrollbar und speichert per Save-Button', () => {
+    const indexHtml = checkedTextFiles.find(([name]) => name === 'public/index.html')[1];
+    const styleCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'style.css'), 'utf8');
+
+    assert.match(indexHtml, /id="detailsModal"/);
+    assert.match(indexHtml, /class="modal-body"/);
+    assert.match(indexHtml, /Speichern & schließen/);
+    assert.match(indexHtml, /saveDetailsSettings\(\)/);
+    assert.match(styleCss, /\.modal-body\s*\{[^}]*overflow-y:\s*auto/);
+    assert.match(styleCss, /\.modal-box\s*\{[^}]*max-height:\s*calc\(100dvh - 32px\)/);
+});
+
+test('Sync-Offset wird nicht mehr per parseInt onchange direkt gespeichert', () => {
+    assert.doesNotMatch(appJs, /parseInt\(this\.value\)\s*\|\|\s*0/);
+    assert.doesNotMatch(appJs, /updateMappingSetting\([^)]*sync_offset_ms/);
+    assert.match(appJs, /function normalizeSyncOffset/);
+    assert.match(appJs, /fetch\(`\/api\/mapping\/\$\{encodeURIComponent\(detailsDraft\.loxoneName\)\}\/settings`/);
+});
+
 test('Frontend validiert Hex-Farben vor style background-color', () => {
     assert.match(appJs, /function safeHexColor/);
     assert.match(appJs, /background-color:\$\{safeHexColor\(st\.hex\)\}/);
