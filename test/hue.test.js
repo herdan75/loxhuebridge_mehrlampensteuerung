@@ -49,6 +49,9 @@ const {
     parseLoxoneCommandValue,
     parseLoxoneRgbComponents,
     mergeHuePayload,
+    getHueSchedulerSpacingMs,
+    scheduleHuePutTask,
+    resetHueSchedulerForTests,
     putHueWithRateLimitRetry
 } = _internals;
 
@@ -259,6 +262,78 @@ test('Runtime-Konfiguration nutzt sichere Defaults bei ungueltiger throttleTime'
     assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1000);
 });
 
+test('HueScheduler fuehrt Tasks in FIFO-Reihenfolge mit Mindestabstand aus', async () => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 100
+    });
+
+    const executed = [];
+    const startedAt = [];
+
+    const first = scheduleHuePutTask({
+        resourceType: 'light',
+        uuid: 'scheduler-1',
+        payload: {},
+        loxoneName: 'scheduler_1',
+        execute: async () => {
+            executed.push('first');
+            startedAt.push(Date.now());
+            await wait(1);
+        }
+    });
+
+    const second = scheduleHuePutTask({
+        resourceType: 'light',
+        uuid: 'scheduler-2',
+        payload: {},
+        loxoneName: 'scheduler_2',
+        execute: async () => {
+            executed.push('second');
+            startedAt.push(Date.now());
+        }
+    });
+
+    await Promise.all([first, second]);
+
+    assert.deepStrictEqual(executed, ['first', 'second']);
+    assert.ok(startedAt[1] - startedAt[0] >= 8, `Abstand war ${startedAt[1] - startedAt[0]}ms`);
+});
+
+test('HueScheduler respektiert grouped_light Mindestabstand', async () => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 100
+    });
+    hueManager.REQUEST_QUEUES.grouped_light.delayMs = 80;
+
+    assert.strictEqual(getHueSchedulerSpacingMs('grouped_light'), 80);
+
+    const startedAt = [];
+    const first = scheduleHuePutTask({
+        resourceType: 'grouped_light',
+        uuid: 'scheduler-group-1',
+        payload: {},
+        loxoneName: 'scheduler_group_1',
+        execute: async () => {
+            startedAt.push(Date.now());
+        }
+    });
+    const second = scheduleHuePutTask({
+        resourceType: 'grouped_light',
+        uuid: 'scheduler-group-2',
+        payload: {},
+        loxoneName: 'scheduler_group_2',
+        execute: async () => {
+            startedAt.push(Date.now());
+        }
+    });
+
+    await Promise.all([first, second]);
+
+    assert.ok(startedAt[1] - startedAt[0] >= 75, `Grouped Abstand war ${startedAt[1] - startedAt[0]}ms`);
+});
+
 test('Loxone-Wertparser akzeptiert numerische Werte und lehnt Text ab', () => {
     assert.deepStrictEqual(parseLoxoneCommandValue('0'), { number: 0, text: '0' });
     assert.deepStrictEqual(parseLoxoneCommandValue('1'), { number: 1, text: '1' });
@@ -301,7 +376,7 @@ test('executeCommand sendet fuer gueltiges RGB keine Brightness ueber 100', asyn
     hueManager.REQUEST_QUEUES.light.delayMs = 0;
 
     await hueManager.executeCommand({ hue_uuid: 'light-rgb-valid', hue_type: 'light', loxone_name: 'rgb_valid' }, '50060080');
-    await wait(20);
+    await wait(80);
 
     assert.strictEqual(axiosPutCalls.length, 1);
     assert.strictEqual(axiosPutCalls[0].payload.dimming.brightness, 80);
@@ -332,7 +407,7 @@ test('executeCommand laesst Aus bei Wert 0 unveraendert', async () => {
     hueManager.REQUEST_QUEUES.light.delayMs = 0;
 
     await hueManager.executeCommand({ hue_uuid: 'light-off-zero', hue_type: 'light', loxone_name: 'off_zero' }, '0');
-    await wait(20);
+    await wait(80);
 
     assert.strictEqual(axiosPutCalls.length, 1);
     assert.deepStrictEqual(axiosPutCalls[0].payload, { on: { on: false } });
