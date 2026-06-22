@@ -48,6 +48,7 @@ const {
     getHueRequestTimeoutMs,
     parseLoxoneCommandValue,
     parseLoxoneRgbComponents,
+    mergeHuePayload,
     putHueWithRateLimitRetry
 } = _internals;
 
@@ -378,6 +379,57 @@ test('Multi-Sync Scheduler erlaubt schnellere experimentelle Rate kontrolliert',
             `Abstand ${i} war ${schedule[i].delayMs - schedule[i - 1].delayMs}ms`
         );
     }
+});
+
+test('Multi-Sync Payload-Merge führt kompatible Teilbefehle zusammen', () => {
+    assert.deepStrictEqual(
+        mergeHuePayload({ on: { on: true } }, { dimming: { brightness: 55 } }),
+        { on: { on: true }, dimming: { brightness: 55 } }
+    );
+
+    assert.deepStrictEqual(
+        mergeHuePayload(
+            { dimming: { brightness: 55 } },
+            { color: { xy: { x: 0.4, y: 0.3 } } }
+        ),
+        { dimming: { brightness: 55 }, color: { xy: { x: 0.4, y: 0.3 } } }
+    );
+});
+
+test('Multi-Sync Payload-Merge behandelt Farbkonflikte eindeutig', () => {
+    assert.deepStrictEqual(
+        mergeHuePayload(
+            { color_temperature: { mirek: 300 }, dimming: { brightness: 50 } },
+            { color: { xy: { x: 0.2, y: 0.4 } } }
+        ),
+        { dimming: { brightness: 50 }, color: { xy: { x: 0.2, y: 0.4 } } }
+    );
+
+    assert.deepStrictEqual(
+        mergeHuePayload(
+            { color: { xy: { x: 0.2, y: 0.4 } }, dimming: { brightness: 50 } },
+            { color_temperature: { mirek: 300 } }
+        ),
+        { dimming: { brightness: 50 }, color_temperature: { mirek: 300 } }
+    );
+});
+
+test('Multi-Sync Payload-Merge priorisiert Aus eindeutig', () => {
+    assert.deepStrictEqual(
+        mergeHuePayload(
+            { on: { on: true }, dimming: { brightness: 50 }, color: { xy: { x: 0.2, y: 0.4 } } },
+            { on: { on: false } }
+        ),
+        { on: { on: false } }
+    );
+
+    assert.deepStrictEqual(
+        mergeHuePayload(
+            { on: { on: false } },
+            { on: { on: true }, dimming: { brightness: 50 } }
+        ),
+        { on: { on: false } }
+    );
 });
 
 test('Multi-Sync Generation verwirft alte geplante Tasks derselben Gruppe', async () => {
