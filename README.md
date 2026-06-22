@@ -215,6 +215,19 @@ npm install
 node server.js
 ```
 
+Optional kann eine `.env` Datei im Projektverzeichnis verwendet werden. Sie wird beim Start automatisch geladen, bevor die Konfiguration gelesen wird.
+
+Beispiel:
+
+```env
+HUE_BRIDGE_IP=192.168.1.10
+HUE_APP_KEY=dein-hue-app-key
+LOXONE_IP=192.168.1.20
+LOXONE_UDP_PORT=7000
+DEBUG=false
+HTTP_PORT=8555
+```
+
 ---
 
 ## 💡 Mehrlampensynchronisierung verwenden
