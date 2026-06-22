@@ -876,6 +876,7 @@
     async function restartServer() { if(confirm("Neustart?")) await fetch('/api/system/restart', {method:'POST'}); }
     function downloadLog() { window.location.href = '/api/system/logdownload'; }
     function downloadBackup() { window.location.href = '/api/system/backup'; }
+    function downloadBackupRedacted() { window.location.href = '/api/system/backup?redactSecrets=true'; }
     function triggerRestore() { document.getElementById('restoreInput').click(); }
     async function restoreBackup(input) {
         if(!input.files.length) return;

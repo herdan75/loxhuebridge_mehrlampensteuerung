@@ -72,6 +72,22 @@ test('Routes - unbekannte Textwerte werden mit HTTP 400 abgelehnt', async () => 
     assert.strictEqual(body, 'Ungültiger Wert');
 });
 
+test('Routes - Backup Redaction entfernt Zugangsdaten', () => {
+    const redacted = routes._internals.redactConfigSecrets({
+        bridgeIp: '192.168.1.10',
+        appKey: 'hue-secret',
+        mqttUser: 'mqtt-user',
+        mqttPass: 'mqtt-secret',
+        authToken: 'auth-secret'
+    });
+
+    assert.strictEqual(redacted.bridgeIp, '192.168.1.10');
+    assert.strictEqual(redacted.mqttUser, 'mqtt-user');
+    assert.strictEqual(redacted.appKey, '***');
+    assert.strictEqual(redacted.mqttPass, '***');
+    assert.strictEqual(redacted.authToken, '***');
+});
+
 test('Routes - XML Exports escape special characters', async (t) => {
     // Setup dummy mapping with special characters
     configManager.mapping = [

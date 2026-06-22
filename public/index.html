@@ -70,6 +70,7 @@
             </div>
             <div style="display:flex; gap:10px;">
                 <button class="add-btn" style="background:var(--text-main); margin:0;" onclick="downloadBackup()">💾 Backup erstellen (Export)</button>
+                <button class="add-btn" style="background:transparent; border:1px solid var(--text-main); color:var(--text-main); margin:0;" onclick="downloadBackupRedacted()">💾 Backup ohne Zugangsdaten</button>
                 <button class="add-btn" style="background:transparent; border:1px solid var(--text-main); color:var(--text-main); margin:0;" onclick="triggerRestore()">📂 Backup wiederherstellen (Import)</button>
                 <input type="file" id="restoreInput" style="display:none" accept=".json" onchange="restoreBackup(this)">
             </div>
