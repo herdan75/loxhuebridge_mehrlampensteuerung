@@ -1,3 +1,7 @@
+## [2.5.8-dev] - In Entwicklung
+### Entwicklung
+- Entwicklungszweig nach Release 2.5.7 fortgeführt.
+
 ## [2.5.7] - 2026-06-22
 ### Bugfixes
 - **Geräte-Details-Modal scrollbar:** Der Inhalt scrollt nun innerhalb des Modals, Header und Button-Zeile bleiben bedienbar.
