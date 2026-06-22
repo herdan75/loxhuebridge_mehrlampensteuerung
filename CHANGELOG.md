@@ -1,4 +1,4 @@
-## [2.5.7-dev] - In Entwicklung
+## [2.5.7] - 2026-06-22
 ### Bugfixes
 - **Geräte-Details-Modal scrollbar:** Der Inhalt scrollt nun innerhalb des Modals, Header und Button-Zeile bleiben bedienbar.
 - **Sync-Offset zuverlässig speichern:** Geräteeinstellungen werden im Modal als Draft bearbeitet und erst mit "Speichern & schließen" über einen gezielten Mapping-Settings-Endpunkt gespeichert.
