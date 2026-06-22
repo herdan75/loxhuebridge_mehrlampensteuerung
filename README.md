@@ -54,6 +54,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 * **Smart Mapping:** Einfache Zuordnung per „Klick & Wähl" mit automatischer Duplikatsfilterung bei erkannten Befehlen.
 * **Erweiterter Diagnose-Tab:** Zeigt Gerätestatus, Zigbee-Konnektivität pro Gerät und eine vollständige Übersicht aller Lampen-Fähigkeiten.
 * **Persistent Logging (SQLite):** Logs bleiben nach Neustarts erhalten und sind durchsuchbar.
+* **SD-Card Mode:** Optional werden Logs nur im RAM gehalten. In diesem Modus wird keine `logs.db` geöffnet und kein SQLite-WAL geschrieben.
 * **Backup & Restore:** Lade deine komplette Konfiguration inkl. Mappings als Backup herunter und stelle sie bei Bedarf wieder her.
 * **Loxone Integration:** Schalten, Dimmen, Warmweiß, RGB sowie Rückmeldungen via UDP.
 * **MQTT Support:** Sendet Statusänderungen parallel an einen MQTT Broker.
