@@ -1,3 +1,23 @@
+## [2.5.2-dev] - 2026-06-22
+### New Features
+- **Optionale Dashboard/API-Authentifizierung:** Webinterface und API können optional per Token geschützt werden, ohne bestehende Loxone-Befehls-URLs zu blockieren.
+- **Backup ohne Zugangsdaten:** Zusätzlicher Backup-Export maskiert Hue App-Key, MQTT-Passwort und Auth-Token. Redigierte Backups werden beim Restore bewusst abgelehnt.
+
+### Verbesserungen
+- **Runtime-Konfiguration beim Start:** Gespeicherte Einstellungen wie Drosselung und Multi-Sync-Grenzen werden nach Neustart korrekt in die laufenden Queues übernommen.
+- **Zentrale Hue-Befehlsplanung:** Hue PUT-Befehle laufen über einen gemeinsamen Scheduler mit globalem Rate-Limit und Backoff bei `429` Antworten.
+- **Robustere Hue Requests:** Hue PUTs haben nun ein Timeout; der EventStream bleibt davon unberührt.
+- **Sicherere Loxone-Werte:** Ungültige Zahlen-, RGB- und CT-Werte werden abgewiesen, statt als fehlerhafte Hue Payload gesendet zu werden.
+- **Stabilere Mehrlampensynchronisierung:** Alte Timer werden sauber verworfen und mehrere Payloads innerhalb eines Sammelfensters werden sinnvoll zusammengeführt.
+- **Hue Effekt-Fähigkeiten berücksichtigen:** Effekte werden nur an Lampen gesendet, die den jeweiligen Effekt laut Hue-Daten unterstützen.
+- **Deduplizierter Alles-Fallback:** `/all` und Gruppen-Fallbacks senden Befehle nicht mehrfach an dieselbe physische Lampe.
+- **SD-Card Mode ohne SQLite-Schreibzugriffe:** Im SD-Card Mode wird keine SQLite-Datenbank geöffnet und kein WAL geschrieben.
+- **Frontend-Ausgabe abgesichert:** Dynamische Inhalte im Webinterface werden konsequenter escaped.
+- **`.env` früh geladen:** Umgebungsvariablen stehen bereits beim Initialisieren der Konfiguration zur Verfügung.
+
+### Tests
+- Testabdeckung für Runtime-Konfiguration, Hue Timeout, Loxone-Validierung, Multi-Sync-Timer, Payload-Merge, Scheduler, 429-Backoff, Effekt-Fähigkeiten, deduplizierte Fallbacks, SD-Card Mode, Frontend-Escaping, Auth und redigierte Backups erweitert.
+
 ## [2.5.1-dev] - 2026-05-19
 ### New Features
 - **Hue Effekt-Fallback für Gruppen/Räume/Zonen:** Effektbefehle wie `candle`, `fire`, `prism`, `sparkle`, `opal`, `glisten`, `noeffect` und `sunrise` werden bei Hue Gruppen/Räumen/Zonen intern auf die enthaltenen einzelnen Hue-Lampen aufgelöst.
