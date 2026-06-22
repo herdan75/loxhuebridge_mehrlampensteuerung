@@ -50,6 +50,7 @@ const {
     buildEffectTargets,
     buildMultiSyncGroupEffectTargets,
     buildAllLightEffectTargets,
+    buildAllCommandTargets,
     supportsEffect,
     filterEffectTargetsByCapabilities,
     normalizeCommandName,
@@ -765,6 +766,46 @@ test('All-Effektziel verwendet nur gemappte Einzel-Lampen und dedupliziert sie',
     const targets = buildAllLightEffectTargets();
 
     assert.deepStrictEqual(targets.map(target => target.uuid), ['light-1', 'light-2']);
+});
+
+test('All-Command-Fallback löst Gruppen auf und dedupliziert enthaltene Lampen', async () => {
+    const entries = [
+        { hue_type: 'light', hue_uuid: 'light-1', loxone_name: 'wohn_1' },
+        { hue_type: 'group', hue_uuid: 'grouped-wz', loxone_name: 'wz_group' }
+    ];
+    const resources = {
+        rooms: [{
+            services: [{ rtype: 'grouped_light', rid: 'grouped-wz' }],
+            children: [
+                { rtype: 'device', rid: 'device-1' },
+                { rtype: 'device', rid: 'device-2' }
+            ]
+        }],
+        zones: [],
+        devices: [
+            { id: 'device-1', services: [{ rtype: 'light', rid: 'light-1' }] },
+            { id: 'device-2', services: [{ rtype: 'light', rid: 'light-2' }] }
+        ]
+    };
+
+    const targets = await buildAllCommandTargets(entries, resources);
+
+    assert.deepStrictEqual(targets.map(target => target.uuid), ['light-1', 'light-2']);
+    assert.deepStrictEqual(targets.map(target => target.entry.hue_type), ['light', 'light']);
+});
+
+test('All-Command-Fallback nutzt Gruppen-Fallback wenn Auflösung fehlschlägt', async () => {
+    const entries = [
+        { hue_type: 'group', hue_uuid: 'grouped-bad', loxone_name: 'bad_group' }
+    ];
+    const targets = await buildAllCommandTargets(entries, {
+        rooms: [],
+        zones: [],
+        devices: []
+    });
+
+    assert.deepStrictEqual(targets.map(target => target.uuid), ['grouped-bad']);
+    assert.strictEqual(targets[0].entry.hue_type, 'group');
 });
 
 test('Effektfähigkeit erlaubt bekannte unterstützte Effekte', () => {
