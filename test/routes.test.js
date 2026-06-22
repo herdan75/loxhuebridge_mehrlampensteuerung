@@ -72,6 +72,31 @@ test('Routes - unbekannte Textwerte werden mit HTTP 400 abgelehnt', async () => 
     assert.strictEqual(body, 'Ungültiger Wert');
 });
 
+test('Routes - ungültige Warmweiss-CT-Werte werden mit HTTP 400 abgelehnt', async () => {
+    configManager.isConfigured = true;
+    configManager.mapping = [
+        { hue_uuid: 'light-1', hue_name: 'Test Lampe', loxone_name: 'test_lampe', hue_type: 'light' }
+    ];
+
+    const layer = routes.stack.find(l => l.route && l.route.path === '/:name/:value');
+    const handler = layer.route.stack[0].handle;
+
+    let statusCode = null;
+    const res = {
+        status(code) {
+            statusCode = code;
+            return this;
+        },
+        send() {
+            return this;
+        }
+    };
+
+    await handler({ params: { name: 'test_lampe', value: '201001500' } }, res);
+
+    assert.strictEqual(statusCode, 400);
+});
+
 test('Routes - Backup Redaction entfernt Zugangsdaten', () => {
     const redacted = routes._internals.redactConfigSecrets({
         bridgeIp: '192.168.1.10',

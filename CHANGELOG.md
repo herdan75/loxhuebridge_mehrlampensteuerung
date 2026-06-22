@@ -1,3 +1,15 @@
+## [2.5.3-dev] - 2026-06-22
+### Verbesserungen
+- **UTF-8/Mojibake repariert:** `public/app.js` zeigt deutsche Texte, Sonderzeichen und Emojis wieder korrekt an.
+- **Encoding-Test ergänzt:** Frontend- und Dokumentationsdateien werden automatisch auf typische Mojibake-Sequenzen geprüft.
+- **HueScheduler-Drosselung korrigiert:** Normale Einzellichtbefehle respektieren wieder `Drosselung`/`throttleTime`; Multi-Sync bleibt durch eigenes Timing und die globale Bridge-Grenze schnell.
+- **Warmweiß/CT validiert:** Loxone-Werte im Format `20BBBKKKK` werden streng geprüft und sicher auf Hue-Mirek-Grenzen begrenzt.
+- **Effekt-Timer abgesichert:** Schnelle Effektwechsel und `no_effect` verwerfen alte geplante Effekt-Timer pro Gruppe.
+- **Scheduler-Code bereinigt:** Alte Queue-Funktionen wurden entfernt; die verbleibenden Delay-Werte sind als Runtime-Abstände des zentralen HueSchedulers benannt.
+
+### Tests
+- Testabdeckung für Encoding, Scheduler-Quellen, CT-Validierung, Effekt-Generationen und Scheduler-Bereinigung erweitert.
+
 ## [2.5.2-dev] - 2026-06-22
 ### New Features
 - **Optionale Dashboard/API-Authentifizierung:** Webinterface und API können optional per Token geschützt werden, ohne bestehende Loxone-Befehls-URLs zu blockieren.
@@ -105,7 +117,7 @@
 ### 🐛 Bugfixes
 - **UI Settings:** Fehlende Eingabefelder für "Übergangszeit" und "Drosselung" im System-Tab hinzugefügt.
 - **Diagnose Tab:** Fehler behoben, der das Laden der Diagnose-Tabelle verhinderte (`loadDiagnostics is not defined`).
-- **Server Stabilität:** Kritischen Fehler beim Start behoben (Hoisting Problem bei `REQUEST_QUEUES`).
+- **Server Stabilität:** Kritischen Fehler beim Start behoben (Hoisting-Problem bei der alten Queue-Konfiguration).
 - **Sonoff / On-Off Fix:** Reine Schaltaktoren erhalten keine `dynamics` Parameter mehr (behebt Probleme mit Sonoff ZBMINIR2).
 - **Sensor Sortierung:** Sensoren werden nun nach Batterie-Status (leer zuerst) und Aktivität sortiert.
 

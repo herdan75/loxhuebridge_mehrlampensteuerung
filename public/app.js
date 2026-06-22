@@ -54,25 +54,25 @@
         }
     }
 
-    // --- Hilfsfunktion fÃ¼r einheitliche Batteriewarnungen ---
+    // --- Hilfsfunktion für einheitliche Batteriewarnungen ---
     function getBatteryHTML(bat) {
         if (bat === undefined || bat === null) return { badge: '', textStyle: '' };
         
         let color = '';
         let badgeStyle = '';
         let textStyle = '';
-        let icon = 'ðŸ”‹';
+        let icon = '🔋';
 
         if (bat <= 10) {
             color = 'red';
             badgeStyle = 'background:#ffcdcd; color:red; font-weight:bold;';
             textStyle = 'color:red; font-weight:bold;';
-            icon = 'ðŸª«';
+            icon = '🪫';
         } else if (bat <= 20) {
             color = 'orange';
             badgeStyle = 'background:#fff3e0; color:orange; font-weight:bold;';
             textStyle = 'color:orange; font-weight:bold;';
-            icon = 'ðŸ”‹';
+            icon = '🔋';
         }
 
         const badge = `<span class="badge" style="${badgeStyle}">${icon} ${bat}%${bat <= 10 ? ' (Leer)' : ''}</span>`;
@@ -88,10 +88,10 @@
         await loadStatus();
 
         const typeConfig = {
-            'light':  { icon: 'ðŸ’¡', label: 'Licht', order: 1 },
-            'group':  { icon: 'ðŸ“¦', label: 'Gruppe', order: 2 },
-            'sensor': { icon: 'ðŸ“¡', label: 'Sensor', order: 3 },
-            'button': { icon: 'ðŸ”˜', label: 'Schalter', order: 4 }
+            'light':  { icon: '💡', label: 'Licht', order: 1 },
+            'group':  { icon: '📦', label: 'Gruppe', order: 2 },
+            'sensor': { icon: '📡', label: 'Sensor', order: 3 },
+            'button': { icon: '🔘', label: 'Schalter', order: 4 }
         };
 
         const sorted = [...mappings].sort((a,b) => {
@@ -107,7 +107,7 @@
         });
 
         // --- Abschnitt 1: Mapping Status-Tabelle ---
-        let html = '<h3 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 8px;">ðŸ“‹ GerÃ¤te & Batterien</h3>';
+        let html = '<h3 style="margin-top:0; border-bottom: 1px solid var(--border); padding-bottom: 8px;">📋 Geräte & Batterien</h3>';
         html += '<table class="settings-table"><thead><tr><th>Name</th><th>Typ</th><th>Batterie</th><th>Letzter Wert</th></tr></thead><tbody>';
         
         sorted.forEach(m => {
@@ -119,8 +119,8 @@
             if (st.bri !== undefined) lastVal += `Bri:${Math.round(st.bri)} `;
             if (st.motion !== undefined) lastVal += `Mot:${st.motion} `;
             if (st.contact !== undefined) lastVal += `Con:${st.contact} `;
-            if (st.temp !== undefined) lastVal += `${st.temp}Â°C `;
-            const tConf = typeConfig[m.hue_type] || {icon:'â“', label: m.hue_type};
+            if (st.temp !== undefined) lastVal += `${st.temp}°C `;
+            const tConf = typeConfig[m.hue_type] || {icon:'❓', label: m.hue_type};
             html += `<tr>
                 <td style="${textStyle}"><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:#666">${escapeHtml(m.hue_name)}</div></td>
                 <td><span class="badge" style="background:#f1f3f5;color:#333; border:1px solid #ddd">${escapeHtml(tConf.icon)} ${escapeHtml(tConf.label)}</span></td>
@@ -134,12 +134,12 @@
         // --- Abschnitt 2 & 3: Bridge-Diagnose asynchron nachladen ---
         try {
             const bridgeRes = await fetch('/api/diagnostics/bridge');
-            if (!bridgeRes.ok) throw new Error('Bridge API nicht verfÃ¼gbar');
+            if (!bridgeRes.ok) throw new Error('Bridge API nicht verfügbar');
             const diagData = await bridgeRes.json();
             if (!diagData) throw new Error('Keine Daten');
 
             // Zigbee Bridge-Info
-            let bridgeHtml = '<h3 style="margin-top: 30px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">ðŸŒ Bridge & Zigbee Netzwerk</h3>';
+            let bridgeHtml = '<h3 style="margin-top: 30px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">🌐 Bridge & Zigbee Netzwerk</h3>';
             if (diagData.zigbee?.bridge) {
                 const b = diagData.zigbee.bridge;
                 bridgeHtml += `<table class="settings-table"><tbody>`;
@@ -148,19 +148,19 @@
                 bridgeHtml += `</tbody></table>`;
             }
 
-            // Zigbee KonnektivitÃ¤t pro GerÃ¤t
+            // Zigbee Konnektivität pro Gerät
             if (diagData.zigbee?.connectivity?.length > 0) {
-                bridgeHtml += `<table class="settings-table" style="margin-top:10px"><thead><tr><th>GerÃ¤t</th><th>Zigbee Status</th><th>UUID</th></tr></thead><tbody>`;
+                bridgeHtml += `<table class="settings-table" style="margin-top:10px"><thead><tr><th>Gerät</th><th>Zigbee Status</th><th>UUID</th></tr></thead><tbody>`;
                 diagData.zigbee.connectivity.forEach(c => {
                     const status_val = c.status || '?';
                     let statusColor = '#888';
                     if (status_val === 'connected') statusColor = 'var(--success,#4caf50)';
                     else if (status_val === 'connectivity_issue') statusColor = 'red';
                     else if (status_val === 'unidirectional_incoming') statusColor = 'orange';
-                    const devName = diagData.serviceToDeviceMap?.[c.id]?.deviceName || 'â€“';
+                    const devName = diagData.serviceToDeviceMap?.[c.id]?.deviceName || '–';
                     bridgeHtml += `<tr>
                         <td style="font-weight:bold">${escapeHtml(devName)}</td>
-                        <td><span style="color:${statusColor}; font-weight:bold">â— ${status_val}</span></td>
+                        <td><span style="color:${statusColor}; font-weight:bold">● ${escapeHtml(status_val)}</span></td>
                         <td style="font-size:0.75em;color:#888;font-family:monospace">${escapeHtml(c.id)}</td>
                     </tr>`;
                 });
@@ -168,10 +168,10 @@
             }
 
             // Lampen-Capabilities
-            let capsHtml = '<h3 style="margin-top: 30px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">ðŸŽ­ Lampen-FÃ¤higkeiten & Effekte</h3>';
+            let capsHtml = '<h3 style="margin-top: 30px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">🎭 Lampen-Fähigkeiten & Effekte</h3>';
             const lightMappings = mappings.filter(m => m.hue_type === 'light' || m.hue_type === 'group');
             if (lightMappings.length > 0 && diagData.capabilities) {
-                capsHtml += `<table class="settings-table"><thead><tr><th>Loxone Name</th><th>Dimm</th><th>Farbe</th><th>WeiÃŸ</th><th>Effekte (persistent)</th><th>Zeiteffekte</th></tr></thead><tbody>`;
+                capsHtml += `<table class="settings-table"><thead><tr><th>Loxone Name</th><th>Dimm</th><th>Farbe</th><th>Weiß</th><th>Effekte (persistent)</th><th>Zeiteffekte</th></tr></thead><tbody>`;
                 lightMappings.sort((a,b) => a.loxone_name.localeCompare(b.loxone_name)).forEach(m => {
                     const rawCaps = diagData.capabilities[m.hue_uuid] || {};
                     const caps = {
@@ -179,12 +179,12 @@
                         supportedEffects: rawCaps.supportedEffects?.map(escapeHtml),
                         supportedTimedEffects: rawCaps.supportedTimedEffects?.map(escapeHtml)
                     };
-                    const yes = '<span style="color:var(--success,#4caf50)">âœ…</span>';
-                    const no  = '<span style="color:#ccc">âŒ</span>';
+                    const yes = '<span style="color:var(--success,#4caf50)">✅</span>';
+                    const no  = '<span style="color:#ccc">❌</span>';
                     const effects = caps.supportedEffects?.filter(e => e !== 'no_effect').map(e =>
-                        `<span class="badge" style="font-size:0.75em;background:#f0f0f0">${e}</span>`).join(' ') || '<span style="color:#ccc">â€“</span>';
+                        `<span class="badge" style="font-size:0.75em;background:#f0f0f0">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
                     const timedFx = caps.supportedTimedEffects?.filter(e => e !== 'no_effect').map(e =>
-                        `<span class="badge" style="font-size:0.75em;background:#e8f5e9">${e}</span>`).join(' ') || '<span style="color:#ccc">â€“</span>';
+                        `<span class="badge" style="font-size:0.75em;background:#e8f5e9">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
                     capsHtml += `<tr>
                         <td><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:#666">${escapeHtml(m.hue_name)}</div></td>
                         <td style="text-align:center">${caps.supportsDimming ? yes : no}</td>
@@ -202,7 +202,7 @@
             div.innerHTML += bridgeHtml + capsHtml;
 
         } catch(e) {
-            div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">âš ï¸ Bridge-Diagnose nicht verfÃ¼gbar: ${e.message}</div>`;
+            div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Bridge-Diagnose nicht verfügbar: ${e.message}</div>`;
         }
     }
 
@@ -222,7 +222,7 @@
             filteredDetected.forEach(d => {
                 const div = document.createElement('div');
                 div.className = `chip command`;
-                div.innerHTML = `<span>ðŸ“¥</span> /${escapeHtml(d.name)}`;
+                div.innerHTML = `<span>📥</span> /${escapeHtml(d.name)}`;
                 div.onclick = () => {
                     if (currentTab !== 'light') setTab('light');
                     document.getElementById('inName').value = d.name;
@@ -266,7 +266,7 @@
         const consoleDiv = document.getElementById('logConsole');
         if(!consoleDiv) return;
         if (!cachedLogs || cachedLogs.length === 0) {
-            consoleDiv.innerHTML = '<div style="text-align:center; color:#555; padding-top:20px;">Keine EintrÃ¤ge gefunden.</div>';
+            consoleDiv.innerHTML = '<div style="text-align:center; color:#555; padding-top:20px;">Keine Einträge gefunden.</div>';
             return;
         }
         const html = cachedLogs.map(l => {
@@ -329,9 +329,9 @@
                 else if(st.motion !== undefined) motion.push(m);
                 else other.push(m);
             });
-            appendGroup(`ðŸšª Kontakte (${contact.length})`, contact, 'var(--danger)');
-            appendGroup(`ðŸƒ Bewegung (${motion.length})`, motion, 'var(--sensor)');
-            appendGroup(`ðŸ“¡ Sonstige (${other.length})`, other, 'var(--text-muted)');
+            appendGroup(`🚪 Kontakte (${contact.length})`, contact, 'var(--danger)');
+            appendGroup(`🏃 Bewegung (${motion.length})`, motion, 'var(--sensor)');
+            appendGroup(`📡 Sonstige (${other.length})`, other, 'var(--text-muted)');
         } else if(currentTab === 'light') {
             const on = [], off = [];
             filtered.forEach(m => {
@@ -340,8 +340,8 @@
             });
             on.sort((a,b)=>a.loxone_name.localeCompare(b.loxone_name));
             off.sort((a,b)=>a.loxone_name.localeCompare(b.loxone_name));
-            appendGroup(`ðŸ’¡ Ein (${on.length})`, on, 'var(--accent)');
-            appendGroup(`ðŸŒ‘ Aus (${off.length})`, off, 'var(--text-muted)');
+            appendGroup(`💡 Ein (${on.length})`, on, 'var(--accent)');
+            appendGroup(`🌑 Aus (${off.length})`, off, 'var(--text-muted)');
         } else {
             // FIX: Schalter nach Batterie sortieren (leer zuerst), danach alphabetisch
             filtered.sort((a,b) => {
@@ -363,8 +363,8 @@
         let badges = '';
         const has = (v) => v !== undefined && v !== null;
 
-        if (has(st.motion)) badges += `<span class="badge" style="background:var(--border)">${st.motion ? 'ðŸƒ' : 'ðŸ§˜'}</span>`;
-        if (has(st.temp)) badges += `<span class="badge">${escapeHtml(safeNumber(st.temp))}Â°C</span>`;
+        if (has(st.motion)) badges += `<span class="badge" style="background:var(--border)">${st.motion ? '🏃' : '🧘'}</span>`;
+        if (has(st.temp)) badges += `<span class="badge">${escapeHtml(safeNumber(st.temp))}°C</span>`;
         if (has(st.lux)) badges += `<span class="badge">${escapeHtml(safeNumber(st.lux))} lx</span>`;
         if (has(st.contact)) badges += `<span class="badge" style="background:${st.contact ? '#ffcdcd' : '#e1ffe1'}">${st.contact ? 'OFFEN' : 'ZU'}</span>`;
         const { badge: batBadge, textStyle: batTextStyle } = getBatteryHTML(st.bat);
@@ -396,7 +396,7 @@
             </div>
             <div style="display:flex; align-items:center">
                 <div class="status-badges">${badges}</div>
-                <button class="del-btn" onclick="event.stopPropagation(); deleteMapping(${jsArg(m.loxone_name)})">âœ–</button>
+                <button class="del-btn" onclick="event.stopPropagation(); deleteMapping(${jsArg(m.loxone_name)})">✖</button>
             </div>
         `;
         return div;
@@ -415,13 +415,13 @@
     function renderDropdown() {
         const select = document.getElementById('hueTarget');
         if(!select) return;
-        select.innerHTML = '<option value="">-- WÃ¤hlen --</option>';
+        select.innerHTML = '<option value="">-- Wählen --</option>';
 
-        // FÃ¼ge "Alle Lichter" als spezielle Option hinzu (nur im Lichter-Tab und wenn noch kein 'all'-Mapping existiert)
+        // Füge "Alle Lichter" als spezielle Option hinzu (nur im Lichter-Tab und wenn noch kein 'all'-Mapping existiert)
         if (currentTab === 'light' && !mappings.some(m => m.hue_uuid === 'pseudo-all' || m.loxone_name === 'all')) {
             const allOpt = document.createElement('option');
             allOpt.value = 'pseudo-all';
-            allOpt.innerHTML = 'ðŸ  Alle Lichter (bridge_home)';
+            allOpt.innerHTML = '🏠 Alle Lichter (bridge_home)';
             allOpt.dataset.type = 'group';
             select.appendChild(allOpt);
         }
@@ -455,13 +455,13 @@
         nameIn.value=''; loadMappings(); loadTargets();
     }
     async function deleteMapping(name) {
-        if(!confirm('LÃ¶schen?')) return;
+        if(!confirm('Löschen?')) return;
         mappings = mappings.filter(m=>m.loxone_name !== name);
         await fetch('/api/mapping', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(mappings)});
         loadMappings(); loadTargets();
     }
 
-    // --- NEU: DYNAMISCHES SPEICHERN FÃœR CHECKBOXEN IM MODAL ---
+    // --- NEU: DYNAMISCHES SPEICHERN FÜR CHECKBOXEN IM MODAL ---
     async function updateMappingSetting(loxName, key, val) {
         const entry = mappings.find(m => m.loxone_name === loxName);
         if (entry) {
@@ -587,13 +587,13 @@
         const groups = cfg.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}`, syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 10 }));
         let html = `
             <tr>
-                <td>${infoLabel('Max. Bridge-Befehle/s', 'Globale Obergrenze fÃ¼r alle Hue-Befehle aus Multi-Sync-Gruppen. Senken, wenn HUE RATE LIMIT 429 erscheint oder mehrere Gruppen gleichzeitig schalten.')}</td>
+                <td>${infoLabel('Max. Bridge-Befehle/s', 'Globale Obergrenze für alle Hue-Befehle aus Multi-Sync-Gruppen. Senken, wenn HUE RATE LIMIT 429 erscheint oder mehrere Gruppen gleichzeitig schalten.')}</td>
                 <td>
                     <div class="slider-container">
                         <input type="range" id="sys_multiBridgeMaxCommandsPerSecond" min="1" max="100" step="1" value="${cfg.bridgeMaxCommandsPerSecond ?? 30}" oninput="document.getElementById('val_multiBridgeMaxRate').innerText = this.value + ' /s'; renderMultiSyncPreview();">
                         <span id="val_multiBridgeMaxRate" class="slider-val">${cfg.bridgeMaxCommandsPerSecond ?? 30} /s</span>
                     </div>
-                    <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Sicherheitsgrenze Ã¼ber alle Multi-Sync-Gruppen hinweg.</div>
+                    <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Sicherheitsgrenze über alle Multi-Sync-Gruppen hinweg.</div>
                 </td>
             </tr>
         `;
@@ -608,11 +608,11 @@
                             <summary style="cursor:pointer; font-weight:bold;">${escapeHtml(group.name || label)}</summary>
                             <table class="settings-table" style="margin-top:10px;">
                                 <tr><td>${infoLabel('Name', 'Freier Anzeigename der Multi-Sync-Gruppe. Der Name kann auch als Effektziel verwendet werden, wenn kein gleichnamiges Loxone-Mapping existiert.')}</td><td><input id="sys_multiName_${id}" value="${escapeHtml(group.name || label)}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
-                                <tr><td>${infoLabel('Sammelfenster', 'Zeitfenster, in dem schnell eintreffende Loxone-Befehle gesammelt werden. HÃ¶her = stabiler bei Szenen, aber etwas spÃ¤terer Start.')}</td><td><div class="slider-container"><input type="range" id="sys_multiSyncWindowMs_${id}" min="50" max="500" step="10" value="${group.syncWindowMs ?? 120}" oninput="document.getElementById('val_multiSyncWindow_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSyncWindow_${id}" class="slider-val">${group.syncWindowMs ?? 120} ms</span></div></td></tr>
-                                <tr><td>${infoLabel('BatchgrÃ¶ÃŸe', 'Anzahl Lampen, nach denen eine zusÃ¤tzliche Batch-Pause eingeplant wird. Bei 10 Lampen und BatchgrÃ¶ÃŸe 10 gibt es praktisch keinen Zwischenstopp.')}</td><td><input type="number" id="sys_multiBatchSize_${id}" min="1" max="20" step="1" value="${group.batchSize ?? 4}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
-                                <tr><td>${infoLabel('Batch-Pause', 'ZusÃ¤tzliche Pause nach jedem Batch. Hilft nur, wenn die BatchgrÃ¶ÃŸe kleiner ist als die Lampenanzahl. Bei BatchgrÃ¶ÃŸe 10 und 10 Lampen meist 0 ms sinnvoll.')}</td><td><div class="slider-container"><input type="range" id="sys_multiBatchDelayMs_${id}" min="0" max="300" step="10" value="${group.batchDelayMs ?? 30}" oninput="document.getElementById('val_multiBatchDelay_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiBatchDelay_${id}" class="slider-val">${group.batchDelayMs ?? 30} ms</span></div></td></tr>
-                                <tr><td>${infoLabel('Max. Lichtbefehle/s', 'Obergrenze fÃ¼r diese Gruppe. Wichtigster Wert gegen Hue 429. Niedriger = stabiler, hÃ¶her = schneller. Typisch 15-20/s testen.')}</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
-                                <tr><td>${infoLabel('Timing-Test', 'Simulation fÃ¼r diese Gruppe: Anzahl aktiver Lampen, Mindestabstand, Zeitpunkt des letzten Befehls und effektive Befehlsrate.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
+                                <tr><td>${infoLabel('Sammelfenster', 'Zeitfenster, in dem schnell eintreffende Loxone-Befehle gesammelt werden. Höher = stabiler bei Szenen, aber etwas späterer Start.')}</td><td><div class="slider-container"><input type="range" id="sys_multiSyncWindowMs_${id}" min="50" max="500" step="10" value="${group.syncWindowMs ?? 120}" oninput="document.getElementById('val_multiSyncWindow_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSyncWindow_${id}" class="slider-val">${group.syncWindowMs ?? 120} ms</span></div></td></tr>
+                                <tr><td>${infoLabel('Batchgröße', 'Anzahl Lampen, nach denen eine zusätzliche Batch-Pause eingeplant wird. Bei 10 Lampen und Batchgröße 10 gibt es praktisch keinen Zwischenstopp.')}</td><td><input type="number" id="sys_multiBatchSize_${id}" min="1" max="20" step="1" value="${group.batchSize ?? 4}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
+                                <tr><td>${infoLabel('Batch-Pause', 'Zusätzliche Pause nach jedem Batch. Hilft nur, wenn die Batchgröße kleiner ist als die Lampenanzahl. Bei Batchgröße 10 und 10 Lampen meist 0 ms sinnvoll.')}</td><td><div class="slider-container"><input type="range" id="sys_multiBatchDelayMs_${id}" min="0" max="300" step="10" value="${group.batchDelayMs ?? 30}" oninput="document.getElementById('val_multiBatchDelay_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiBatchDelay_${id}" class="slider-val">${group.batchDelayMs ?? 30} ms</span></div></td></tr>
+                                <tr><td>${infoLabel('Max. Lichtbefehle/s', 'Obergrenze für diese Gruppe. Wichtigster Wert gegen Hue 429. Niedriger = stabiler, höher = schneller. Typisch 15-20/s testen.')}</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
+                                <tr><td>${infoLabel('Timing-Test', 'Simulation für diese Gruppe: Anzahl aktiver Lampen, Mindestabstand, Zeitpunkt des letzten Befehls und effektive Befehlsrate.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
                             </table>
                         </details>
                     </td>
@@ -663,11 +663,11 @@
             table.innerHTML = `
                 <tr><td colspan="2" style="background:#eee;font-weight:bold">Allgemein</td></tr>
                 <tr><td>Version</td><td><span class="badge" style="background:#333;color:#fff">${s.version}</span></td></tr>
-                <tr><td>${infoLabel('Loxone IP', 'IP-Adresse des Loxone Miniservers fÃ¼r UDP-RÃ¼ckmeldungen von Hue StatusÃ¤nderungen.')}</td><td><input id="sys_loxIp" value="${v(s.loxone_ip)}"></td></tr>
+                <tr><td>${infoLabel('Loxone IP', 'IP-Adresse des Loxone Miniservers für UDP-Rückmeldungen von Hue Statusänderungen.')}</td><td><input id="sys_loxIp" value="${v(s.loxone_ip)}"></td></tr>
                 <tr><td>${infoLabel('UDP Port', 'UDP-Port am Loxone Miniserver, auf den Statusmeldungen gesendet werden. Muss zur virtuellen UDP-Eingangskonfiguration passen.')}</td><td><input type="number" id="sys_loxPort" value="${v(s.loxone_port)}"></td></tr>
                 
                 <tr>
-                    <td>${infoLabel('Ãœbergangszeit', 'Hue Dynamics Dauer fÃ¼r weiche ÃœbergÃ¤nge. HÃ¶her wirkt sanfter, aber trÃ¤ger. FÃ¼r schnelle Szenen eher 0-100 ms testen.')}</td>
+                    <td>${infoLabel('Übergangszeit', 'Hue Dynamics Dauer für weiche Übergänge. Höher wirkt sanfter, aber träger. Für schnelle Szenen eher 0-100 ms testen.')}</td>
                     <td>
                         <div class="slider-container">
                             <input type="range" id="sys_transition" min="0" max="1000" step="50" value="${v(s.transitionTime)}" oninput="document.getElementById('val_trans').innerText = this.value + ' ms'">
@@ -676,7 +676,7 @@
                     </td>
                 </tr>
                 <tr>
-                    <td>${infoLabel('Drosselung', 'Pause der normalen Hue-Queue auÃŸerhalb Multi-Sync. HÃ¶her reduziert Last, betrifft normale Einzel- und Gruppenbefehle.')}</td>
+                    <td>${infoLabel('Drosselung', 'Pause der normalen Hue-Queue außerhalb Multi-Sync. Höher reduziert Last, betrifft normale Einzel- und Gruppenbefehle.')}</td>
                     <td>
                         <div class="slider-container">
                             <input type="range" id="sys_throttle" min="0" max="1000" step="50" value="${v(s.throttleTime)}" oninput="document.getElementById('val_thro').innerText = this.value + ' ms'">
@@ -685,7 +685,7 @@
                     </td>
                 </tr>
                 <tr>
-                    <td>${infoLabel('EventStream Watchdog', 'Startet den Hue EventStream neu, wenn lÃ¤ngere Zeit keine Daten kommen. 10 min ist Standard; niedriger nur bei echten Aussetzern.')}</td>
+                    <td>${infoLabel('EventStream Watchdog', 'Startet den Hue EventStream neu, wenn längere Zeit keine Daten kommen. 10 min ist Standard; niedriger nur bei echten Aussetzern.')}</td>
                     <td>
                         <div class="slider-container">
                             <input type="range" id="sys_eventStreamWatchdogTimeoutSeconds" min="60" max="3600" step="60" value="${v(s.eventStreamWatchdogTimeoutSeconds ?? 600)}" oninput="document.getElementById('val_eventWatchdog').innerText = Math.round(this.value / 60) + ' min'">
@@ -708,7 +708,7 @@
                     </td>
                 </tr>
                 <tr>
-                    <td>BatchgrÃ¶ÃŸe</td>
+                    <td>Batchgröße</td>
                     <td><input type="number" id="sys_multiBatchSize" min="1" max="20" step="1" value="${v(s.multiLightControl?.batchSize ?? 4)}" oninput="renderMultiSyncPreview()"></td>
                 </tr>
                 <tr>
@@ -718,7 +718,7 @@
                             <input type="range" id="sys_multiBatchDelayMs" min="0" max="300" step="10" value="${v(s.multiLightControl?.batchDelayMs ?? 30)}" oninput="document.getElementById('val_multiBatchDelay').innerText = this.value + ' ms'; renderMultiSyncPreview();">
                             <span id="val_multiBatchDelay" class="slider-val">${v(s.multiLightControl?.batchDelayMs ?? 30)} ms</span>
                         </div>
-                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Gilt nur fÃ¼r Lampen mit aktivierter Mehrlampensynchronisierung.</div>
+                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Gilt nur für Lampen mit aktivierter Mehrlampensynchronisierung.</div>
                     </td>
                 </tr>
                 <tr>
@@ -728,7 +728,7 @@
                             <input type="range" id="sys_multiMaxCommandsPerSecond" min="1" max="50" step="1" value="${v(s.multiLightControl?.maxCommandsPerSecond ?? 10)}" oninput="document.getElementById('val_multiMaxRate').innerText = this.value + ' /s'; renderMultiSyncPreview();">
                             <span id="val_multiMaxRate" class="slider-val">${v(s.multiLightControl?.maxCommandsPerSecond ?? 10)} /s</span>
                         </div>
-                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">10/s entspricht der Hue-Empfehlung. HÃ¶here Werte vorsichtig je Lampenmenge testen.</div>
+                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">10/s entspricht der Hue-Empfehlung. Höhere Werte vorsichtig je Lampenmenge testen.</div>
                     </td>
                 </tr>
                 <tr>
@@ -741,7 +741,7 @@
 
                 <tr><td>${infoLabel('Debug Modus', 'Schreibt detaillierte IN/OUT/Event-Logs. Hilfreich zum Testen, im Dauerbetrieb bei vielen Befehlen eher deaktivieren.')}</td><td><input type="checkbox" id="sys_debug" ${s.debug?'checked':''}></td></tr>
                 <tr>
-                    <td>${infoLabel('SD-Card Mode', 'Deaktiviert Schreibzugriffe auf logs.db und hÃ¤lt Logs nur im RAM. Sinnvoll auf SD-Karten-Systemen.')}</td>
+                    <td>${infoLabel('SD-Card Mode', 'Deaktiviert Schreibzugriffe auf logs.db und hält Logs nur im RAM. Sinnvoll auf SD-Karten-Systemen.')}</td>
                     <td>
                         <input type="checkbox" id="sys_disableLogDisk" ${s.disableLogDisk?'checked':''}>
                         <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Deaktiviert Schreibzugriffe auf logs.db.</div>
@@ -754,7 +754,7 @@
                 <tr><td>${infoLabel('Port', 'MQTT-Port. Standard ist 1883 ohne TLS.')}</td><td><input type="number" id="sys_mqttPort" value="${v(s.mqttPort)||1883}"></td></tr>
                 <tr><td>${infoLabel('User', 'Optionaler MQTT Benutzername.')}</td><td><input id="sys_mqttUser" value="${v(s.mqttUser)}"></td></tr>
                 <tr><td>${infoLabel('Passwort', 'Optionales MQTT Passwort.')}</td><td><input type="password" id="sys_mqttPass" value="${v(s.mqttPass)}"></td></tr>
-                <tr><td>${infoLabel('Prefix', 'Topic-Prefix fÃ¼r MQTT Statusmeldungen, z. B. loxhue/light/wohnzimmer/on.')}</td><td><input id="sys_mqttPrefix" value="${v(s.mqttPrefix)||'loxhue'}"></td></tr>
+                <tr><td>${infoLabel('Prefix', 'Topic-Prefix für MQTT Statusmeldungen, z. B. loxhue/light/wohnzimmer/on.')}</td><td><input id="sys_mqttPrefix" value="${v(s.mqttPrefix)||'loxhue'}"></td></tr>
             `;
             renderMultiSyncPreview();
         } catch(e){ console.error("Fehler bei loadSettings:", e); }
@@ -770,7 +770,7 @@
 
         let content = `<div style="margin-bottom:20px;">`;
 
-        // 1. SETTINGS (nur fÃ¼r Lichter/Gruppen)
+        // 1. SETTINGS (nur für Lichter/Gruppen)
         if (entry.hue_type === 'light' || entry.hue_type === 'group') {
             const caps = target.capabilities || {};
             const supportsDimming = entry.hue_type === 'group' ? true : !!caps.supportsDimming; 
@@ -783,14 +783,14 @@
                 .join('');
 
             content += `
-                <h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">âš™ï¸ Einstellungen</h3>
+                <h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">⚙️ Einstellungen</h3>
                 
                 <div class="settings-card">
                     <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
                         <input type="checkbox" ${entry.sync_lox ? 'checked' : ''} onchange="updateMappingSetting(${safeLoxoneName}, 'sync_lox', this.checked)"> 
                         <span style="font-weight:500;">Loxone Sync</span>
                     </label>
-                    <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">Sendet StatusÃ¤nderungen per UDP an Loxone zurÃ¼ck.</div>
+                    <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">Sendet Statusänderungen per UDP an Loxone zurück.</div>
                 </div>
 
                 <div class="settings-card" style="opacity: ${isStrictOnOff ? '0.6' : '1'};">
@@ -799,7 +799,7 @@
                         <span style="font-weight:500;">Dynamics ignorieren</span>
                     </label>
                     <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">
-                        ${isStrictOnOff ? 'Dieses GerÃ¤t ist ein reiner On/Off Schalter und unterstÃ¼tzt kein Dimmen. Parameter ist erzwungen aktiv.' : 'Deaktiviert weiche Ãœbergangszeiten (Transition) beim Schalten fÃ¼r dieses GerÃ¤t.'}
+                        ${isStrictOnOff ? 'Dieses Gerät ist ein reiner On/Off Schalter und unterstützt kein Dimmen. Parameter ist erzwungen aktiv.' : 'Deaktiviert weiche Übergangszeiten (Transition) beim Schalten für dieses Gerät.'}
                     </div>
                 </div>
                 
@@ -823,7 +823,7 @@
                         <span style="font-size:0.85rem; color:var(--text-muted);">ms</span>
                     </div>
                     <div style="font-size:0.75rem; color:var(--text-muted); margin-left:24px; margin-top:4px;">
-                        Negativ = frÃ¼her senden, positiv = spÃ¤ter senden. Empfohlen: zuerst 0 ms, danach in 10-ms-Schritten abstimmen.
+                        Negativ = früher senden, positiv = später senden. Empfohlen: zuerst 0 ms, danach in 10-ms-Schritten abstimmen.
                     </div>
                 </div>
 
@@ -831,8 +831,8 @@
             `;
         }
 
-        // 2. STATUS & SPECS (fÃ¼r alle GerÃ¤te)
-        content += `<h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">âš¡ Aktueller Status</h3><table class="details-table">`;
+        // 2. STATUS & SPECS (für alle Geräte)
+        content += `<h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">⚡ Aktueller Status</h3><table class="details-table">`;
         const isOn = currentStatus.on === 1 || currentStatus.on === true;
         
         if (currentStatus.on !== undefined) {
@@ -847,12 +847,12 @@
 
         // Sensor Stats
         if (currentStatus.bat !== undefined) content += `<tr><td>Batterie</td><td>${currentStatus.bat} %</td></tr>`;
-        if (currentStatus.temp !== undefined) content += `<tr><td>Temperatur</td><td>${currentStatus.temp} Â°C</td></tr>`;
+        if (currentStatus.temp !== undefined) content += `<tr><td>Temperatur</td><td>${currentStatus.temp} °C</td></tr>`;
         if (currentStatus.lux !== undefined) content += `<tr><td>Helligkeit</td><td>${currentStatus.lux} lx</td></tr>`;
-        if (currentStatus.contact !== undefined) content += `<tr><td>Kontakt</td><td>${currentStatus.contact === 1 ? 'ðŸ”“ Offen' : 'ðŸ”’ Geschlossen'}</td></tr>`;
-        if (currentStatus.motion !== undefined) content += `<tr><td>Bewegung</td><td>${currentStatus.motion === 1 ? 'ðŸƒ Ja' : 'ðŸ§˜ Nein'}</td></tr>`;
+        if (currentStatus.contact !== undefined) content += `<tr><td>Kontakt</td><td>${currentStatus.contact === 1 ? '🔓 Offen' : '🔒 Geschlossen'}</td></tr>`;
+        if (currentStatus.motion !== undefined) content += `<tr><td>Bewegung</td><td>${currentStatus.motion === 1 ? '🏃 Ja' : '🧘 Nein'}</td></tr>`;
 
-        content += `<tr><td colspan="2" style="border-bottom:none; padding-top:20px; color:var(--text-muted); font-weight:bold;">ðŸ“‹ Technische Daten</td></tr>`;
+        content += `<tr><td colspan="2" style="border-bottom:none; padding-top:20px; color:var(--text-muted); font-weight:bold;">📋 Technische Daten</td></tr>`;
         content += `<tr><td>Name</td><td>${escapeHtml(target.name)}</td></tr>`;
         content += `<tr><td>Loxone ID</td><td>${escapeHtml(loxoneName)}</td></tr>`;
         content += `<tr><td>Typ</td><td><span class="badge" style="background:#eee;color:#333">${escapeHtml(entry.hue_type)}</span></td></tr>`;
@@ -866,7 +866,7 @@
     function toggleSelectAll() { allSelected = !allSelected; document.querySelectorAll('.modal-checkbox').forEach(cb => cb.checked = allSelected); }
     function doExport() {
         const checked = document.querySelectorAll('.modal-checkbox:checked');
-        if(checked.length === 0) return alert("Bitte wÃ¤hlen.");
+        if(checked.length === 0) return alert("Bitte wählen.");
         const names = Array.from(checked).map(cb => cb.value).join(',');
         const type = currentTab === 'light' ? 'outputs' : 'inputs';
         window.location.href = `/api/download/${type}?names=${names}`;

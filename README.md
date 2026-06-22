@@ -11,7 +11,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.2-dev Mehrlampensteuerung
+## 🚀 Features V2.5.3-dev Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
@@ -148,7 +148,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.2-dev
+Version: 2.5.3-dev
 ```
 
 ### Zurück auf main
@@ -430,8 +430,10 @@ Adresse: `http://<IP-DER-BRIDGE>:8555`
 | --- | --- | --- |
 | **Ausschalten** | `/kueche/<v>` | Schaltet aus bei Wert 0 |
 | **Dimmen** | `/kueche/<v>` | Werte 2-100 % |
-| **Warmweiß** | `/kueche/<v>` | Smart Actuator Logik, z. B. `201002700` |
+| **Warmweiß** | `/kueche/<v>` | Smart Actuator Logik im Format `20BBBKKKK`, z. B. `201002700` |
 | **RGB** | `/kueche/<v>` | RGB Logik: R + G*1000 + B*1000000, jede Komponente 0-100 |
+
+Warmweiß-Werte werden strikt als `20BBBKKKK` validiert: `BBB` ist die Helligkeit `000..100`, `KKKK` ist Kelvin `2000..6500`. Beispiel `201002700` bedeutet 100 % bei 2700 K. Ungültige Werte werden mit HTTP 400 abgelehnt.
 
 RGB-Werte werden strikt validiert. R, G und B müssen jeweils im Bereich `0..100` liegen. Werte außerhalb dieses Bereichs werden abgelehnt, damit Hue keine ungültige Helligkeit größer als 100 erhält.
 

@@ -58,6 +58,7 @@ const {
     getHueRequestTimeoutMs,
     parseLoxoneCommandValue,
     parseLoxoneRgbComponents,
+    parseLoxoneCtCommandValue,
     mergeHuePayload,
     getHueSchedulerSpacingMs,
     scheduleHuePutTask,
@@ -235,12 +236,12 @@ test('Hue PUT Requests werden mit Timeout an axios uebergeben', async () => {
 
 test('Runtime-Konfiguration setzt Light Queue Delay aus throttleTime', () => {
     configManager.config.throttleTime = 250;
-    hueManager.REQUEST_QUEUES.light.delayMs = 100;
-    hueManager.REQUEST_QUEUES.grouped_light.delayMs = 1100;
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 100;
+    hueManager.HUE_RESOURCE_DELAYS.grouped_light.delayMs = 1100;
 
     hueManager.applyRuntimeConfig();
 
-    assert.strictEqual(hueManager.REQUEST_QUEUES.light.delayMs, 250);
+    assert.strictEqual(hueManager.HUE_RESOURCE_DELAYS.light.delayMs, 250);
     assert.strictEqual(getRuntimeThrottleTimeMs(), 250);
 });
 
@@ -249,36 +250,37 @@ test('Runtime-Konfiguration setzt grouped_light Queue mindestens auf 1000 ms', (
 
     hueManager.applyRuntimeConfig();
 
-    assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1000);
+    assert.strictEqual(hueManager.HUE_RESOURCE_DELAYS.grouped_light.delayMs, 1000);
 
     configManager.config.throttleTime = 1500;
     hueManager.applyRuntimeConfig();
 
-    assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1500);
+    assert.strictEqual(hueManager.HUE_RESOURCE_DELAYS.grouped_light.delayMs, 1500);
 });
 
 test('Runtime-Konfiguration nutzt sichere Defaults bei ungueltiger throttleTime', () => {
     configManager.config.throttleTime = 'ungueltig';
-    hueManager.REQUEST_QUEUES.light.delayMs = 999;
-    hueManager.REQUEST_QUEUES.grouped_light.delayMs = 999;
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 999;
+    hueManager.HUE_RESOURCE_DELAYS.grouped_light.delayMs = 999;
 
     hueManager.applyRuntimeConfig();
 
-    assert.strictEqual(hueManager.REQUEST_QUEUES.light.delayMs, 100);
-    assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1000);
+    assert.strictEqual(hueManager.HUE_RESOURCE_DELAYS.light.delayMs, 100);
+    assert.strictEqual(hueManager.HUE_RESOURCE_DELAYS.grouped_light.delayMs, 1000);
 
     configManager.config.throttleTime = -50;
     hueManager.applyRuntimeConfig();
 
-    assert.strictEqual(hueManager.REQUEST_QUEUES.light.delayMs, 100);
-    assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1000);
+    assert.strictEqual(hueManager.HUE_RESOURCE_DELAYS.light.delayMs, 100);
+    assert.strictEqual(hueManager.HUE_RESOURCE_DELAYS.grouped_light.delayMs, 1000);
 });
 
-test('HueScheduler fuehrt Tasks in FIFO-Reihenfolge mit Mindestabstand aus', async () => {
+test('HueScheduler fuehrt normale Light-Tasks in FIFO-Reihenfolge mit throttleTime aus', async () => {
     resetHueSchedulerForTests();
     configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
         bridgeMaxCommandsPerSecond: 100
     });
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 35;
 
     const executed = [];
     const startedAt = [];
@@ -309,7 +311,8 @@ test('HueScheduler fuehrt Tasks in FIFO-Reihenfolge mit Mindestabstand aus', asy
     await Promise.all([first, second]);
 
     assert.deepStrictEqual(executed, ['first', 'second']);
-    assert.ok(startedAt[1] - startedAt[0] >= 8, `Abstand war ${startedAt[1] - startedAt[0]}ms`);
+    assert.strictEqual(getHueSchedulerSpacingMs('light', 'normal'), 35);
+    assert.ok(startedAt[1] - startedAt[0] >= 30, `Abstand war ${startedAt[1] - startedAt[0]}ms`);
 });
 
 test('HueScheduler respektiert grouped_light Mindestabstand', async () => {
@@ -317,9 +320,9 @@ test('HueScheduler respektiert grouped_light Mindestabstand', async () => {
     configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
         bridgeMaxCommandsPerSecond: 100
     });
-    hueManager.REQUEST_QUEUES.grouped_light.delayMs = 80;
+    hueManager.HUE_RESOURCE_DELAYS.grouped_light.delayMs = 45;
 
-    assert.strictEqual(getHueSchedulerSpacingMs('grouped_light'), 80);
+    assert.strictEqual(getHueSchedulerSpacingMs('grouped_light'), 45);
 
     const startedAt = [];
     const first = scheduleHuePutTask({
@@ -343,7 +346,70 @@ test('HueScheduler respektiert grouped_light Mindestabstand', async () => {
 
     await Promise.all([first, second]);
 
-    assert.ok(startedAt[1] - startedAt[0] >= 75, `Grouped Abstand war ${startedAt[1] - startedAt[0]}ms`);
+    assert.ok(startedAt[1] - startedAt[0] >= 40, `Grouped Abstand war ${startedAt[1] - startedAt[0]}ms`);
+});
+
+test('HueScheduler nutzt fuer grouped_light Runtime-Minimum von 1000 ms oder throttleTime', () => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 100
+    });
+
+    configManager.config.throttleTime = 100;
+    hueManager.applyRuntimeConfig();
+    assert.strictEqual(getHueSchedulerSpacingMs('grouped_light', 'normal_group'), 1000);
+
+    configManager.config.throttleTime = 1200;
+    hueManager.applyRuntimeConfig();
+    assert.strictEqual(getHueSchedulerSpacingMs('grouped_light', 'normal_group'), 1200);
+});
+
+test('HueScheduler bremst Multi-Sync-Light-Tasks nicht zusaetzlich mit throttleTime', async () => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 100
+    });
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 120;
+
+    assert.strictEqual(getHueSchedulerSpacingMs('light', 'multi_sync'), 10);
+
+    const startedAt = [];
+    const first = scheduleHuePutTask({
+        resourceType: 'light',
+        source: 'multi_sync',
+        uuid: 'scheduler-multi-1',
+        payload: {},
+        loxoneName: 'scheduler_multi_1',
+        execute: async () => {
+            startedAt.push(Date.now());
+        }
+    });
+    const second = scheduleHuePutTask({
+        resourceType: 'light',
+        source: 'multi_sync',
+        uuid: 'scheduler-multi-2',
+        payload: {},
+        loxoneName: 'scheduler_multi_2',
+        execute: async () => {
+            startedAt.push(Date.now());
+        }
+    });
+
+    await Promise.all([first, second]);
+
+    assert.ok(startedAt[1] - startedAt[0] < 80, `Multi-Sync Abstand war ${startedAt[1] - startedAt[0]}ms`);
+});
+
+test('HueScheduler Bridge-Maximum bleibt globale Untergrenze', () => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 20
+    });
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+
+    assert.strictEqual(getHueSchedulerSpacingMs('light', 'normal'), 50);
+    assert.strictEqual(getHueSchedulerSpacingMs('light', 'multi_sync'), 50);
+    assert.strictEqual(getHueSchedulerSpacingMs('light', 'effect'), 50);
 });
 
 test('HueScheduler setzt globale Penalty bei 429', () => {
@@ -452,12 +518,30 @@ test('RGB-Komponenten werden auf 0..100 validiert', () => {
     assert.throws(() => parseLoxoneRgbComponents(101000000, '101000000'), /außerhalb 0\.\.100/);
 });
 
+test('Warmweiss-CT-Werte werden streng validiert und sicher geclamped', () => {
+    assert.deepStrictEqual(parseLoxoneCtCommandValue('201002700'), {
+        brightness: 100,
+        kelvin: 2700,
+        mirek: 370
+    });
+
+    assert.throws(() => parseLoxoneCtCommandValue('201012700'), /Ungültiger Loxone-Wert/);
+    assert.throws(() => parseLoxoneCtCommandValue('201001999'), /Kelvin 1999/);
+    assert.throws(() => parseLoxoneCtCommandValue('201006501'), /Kelvin 6501/);
+    assert.throws(() => parseLoxoneCtCommandValue('2010027009'), /Ungültiger Loxone-Wert/);
+
+    assert.strictEqual(parseLoxoneCtCommandValue('201006500').mirek, 154);
+    assert.strictEqual(parseLoxoneCtCommandValue('201002000').mirek, 500);
+    assert.strictEqual(parseLoxoneCtCommandValue('201006500', { min: 200, max: 400 }).mirek, 200);
+    assert.strictEqual(parseLoxoneCtCommandValue('201002000', { min: 200, max: 400 }).mirek, 400);
+});
+
 test('executeCommand sendet fuer gueltiges RGB keine Brightness ueber 100', async () => {
     axiosPutCalls.length = 0;
     configManager.config.bridgeIp = 'bridge';
     configManager.config.appKey = 'app-key';
     configManager.config.transitionTime = 0;
-    hueManager.REQUEST_QUEUES.light.delayMs = 0;
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
 
     await hueManager.executeCommand({ hue_uuid: 'light-rgb-valid', hue_type: 'light', loxone_name: 'rgb_valid' }, '50060080');
     await wait(80);
@@ -465,6 +549,27 @@ test('executeCommand sendet fuer gueltiges RGB keine Brightness ueber 100', asyn
     assert.strictEqual(axiosPutCalls.length, 1);
     assert.strictEqual(axiosPutCalls[0].payload.dimming.brightness, 80);
     assert.ok(axiosPutCalls[0].payload.dimming.brightness <= 100);
+});
+
+test('executeCommand sendet gueltiges Warmweiss mit sicherem Mirek-Wert', async () => {
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.config.transitionTime = 0;
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 100
+    });
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    hueManager.getLightCapabilities()['light-ct-valid'] = { supportsCt: true, min: 200, max: 400 };
+
+    await hueManager.executeCommand({ hue_uuid: 'light-ct-valid', hue_type: 'light', loxone_name: 'ct_valid' }, '201002000');
+    await wait(80);
+
+    assert.strictEqual(axiosPutCalls.length, 1);
+    assert.deepStrictEqual(axiosPutCalls[0].payload.color_temperature, { mirek: 400 });
+    assert.strictEqual(axiosPutCalls[0].payload.dimming.brightness, 100);
+
+    delete hueManager.getLightCapabilities()['light-ct-valid'];
 });
 
 test('executeCommand lehnt RGB und Warmweiss mit zu hoher Helligkeit ab', async () => {
@@ -488,7 +593,7 @@ test('executeCommand laesst Aus bei Wert 0 unveraendert', async () => {
     configManager.config.bridgeIp = 'bridge';
     configManager.config.appKey = 'app-key';
     configManager.config.transitionTime = 0;
-    hueManager.REQUEST_QUEUES.light.delayMs = 0;
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
 
     await hueManager.executeCommand({ hue_uuid: 'light-off-zero', hue_type: 'light', loxone_name: 'off_zero' }, '0');
     await wait(80);
@@ -668,6 +773,104 @@ test('Multi-Sync Generation ist pro Gruppe isoliert', async () => {
 
     assert.deepStrictEqual(byUuid['multi-generation-a2'], [60]);
     assert.deepStrictEqual(byUuid['multi-generation-b'], [70]);
+});
+
+test('Effekt-Generation verwirft alte Timer derselben Multi-Sync-Gruppe', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.mapping = [
+        { hue_type: 'light', hue_uuid: 'effect-a1', loxone_name: 'effect_a1', multi_sync: true, multi_sync_group: 'a', sync_offset_ms: 120 },
+        { hue_type: 'light', hue_uuid: 'effect-a2', loxone_name: 'effect_a2', multi_sync: true, multi_sync_group: 'a', sync_offset_ms: 120 }
+    ];
+
+    await hueManager.executeEffectForMultiSyncGroup('a', 'candle');
+    await wait(30);
+    configManager.mapping.forEach(entry => { entry.sync_offset_ms = 0; });
+    await hueManager.executeEffectForMultiSyncGroup('a', 'fire');
+    await wait(240);
+
+    const effects = axiosPutCalls.map(call => call.payload.effects?.effect);
+    assert.deepStrictEqual(effects, ['fire', 'fire']);
+});
+
+test('Effekt-Generation verwirft alte Timer nach noeffect', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.mapping = [
+        { hue_type: 'light', hue_uuid: 'effect-stop-a1', loxone_name: 'effect_stop_a1', multi_sync: true, multi_sync_group: 'a', sync_offset_ms: 120 }
+    ];
+
+    await hueManager.executeEffectForMultiSyncGroup('a', 'fire');
+    await wait(30);
+    configManager.mapping[0].sync_offset_ms = 0;
+    await hueManager.executeEffectForMultiSyncGroup('a', 'no_effect');
+    await wait(220);
+
+    const effects = axiosPutCalls.map(call => call.payload.effects?.effect);
+    assert.deepStrictEqual(effects, ['no_effect']);
+});
+
+test('Effekt-Generation bleibt zwischen Multi-Sync-Gruppen unabhaengig', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.mapping = [
+        { hue_type: 'light', hue_uuid: 'effect-group-a', loxone_name: 'effect_group_a', multi_sync: true, multi_sync_group: 'a', sync_offset_ms: 120 },
+        { hue_type: 'light', hue_uuid: 'effect-group-b', loxone_name: 'effect_group_b', multi_sync: true, multi_sync_group: 'b', sync_offset_ms: 120 }
+    ];
+
+    await hueManager.executeEffectForMultiSyncGroup('a', 'candle');
+    await hueManager.executeEffectForMultiSyncGroup('b', 'fire');
+    await wait(30);
+    configManager.mapping[0].sync_offset_ms = 0;
+    await hueManager.executeEffectForMultiSyncGroup('a', 'no_effect');
+    await wait(260);
+
+    const byUuid = axiosPutCalls.reduce((acc, call) => {
+        const uuid = call.url.split('/').pop();
+        acc[uuid] = acc[uuid] || [];
+        acc[uuid].push(call.payload.effects?.effect);
+        return acc;
+    }, {});
+
+    assert.deepStrictEqual(byUuid['effect-group-a'], ['no_effect']);
+    assert.deepStrictEqual(byUuid['effect-group-b'], ['fire']);
+});
+
+test('Effekt-Generation schützt auch die Default-Gruppe', async () => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 100
+    });
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+
+    await hueManager.executeEffect({
+        hue_type: 'light',
+        hue_uuid: 'effect-default',
+        loxone_name: 'effect_default',
+        sync_offset_ms: 120
+    }, 'candle');
+    await wait(30);
+    await hueManager.executeEffect({
+        hue_type: 'light',
+        hue_uuid: 'effect-default',
+        loxone_name: 'effect_default',
+        sync_offset_ms: 0
+    }, 'fire');
+    await wait(220);
+
+    const effects = axiosPutCalls.map(call => call.payload.effects?.effect);
+    assert.deepStrictEqual(effects, ['fire']);
 });
 
 test('Multi-Sync Preview trennt Lampen nach Gruppe', () => {
