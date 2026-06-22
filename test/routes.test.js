@@ -44,6 +44,34 @@ test('Routes - reservierte Discovery/API Pfade werden nicht als Loxone-Befehl be
     assert.strictEqual(routes._internals.isReservedDiscoveryPath('wohnzimmer'), false);
 });
 
+test('Routes - unbekannte Textwerte werden mit HTTP 400 abgelehnt', async () => {
+    configManager.isConfigured = true;
+    configManager.mapping = [
+        { hue_uuid: 'light-1', hue_name: 'Test Lampe', loxone_name: 'test_lampe', hue_type: 'light' }
+    ];
+
+    const layer = routes.stack.find(l => l.route && l.route.path === '/:name/:value');
+    const handler = layer.route.stack[0].handle;
+
+    let statusCode = null;
+    let body = null;
+    const res = {
+        status(code) {
+            statusCode = code;
+            return this;
+        },
+        send(content) {
+            body = content;
+            return this;
+        }
+    };
+
+    await handler({ params: { name: 'test_lampe', value: 'foobar' } }, res);
+
+    assert.strictEqual(statusCode, 400);
+    assert.strictEqual(body, 'Ungültiger Wert');
+});
+
 test('Routes - XML Exports escape special characters', async (t) => {
     // Setup dummy mapping with special characters
     configManager.mapping = [

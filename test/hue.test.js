@@ -46,6 +46,7 @@ const {
     normalizeCommandName,
     getRuntimeThrottleTimeMs,
     getHueRequestTimeoutMs,
+    parseLoxoneCommandValue,
     putHueWithRateLimitRetry
 } = _internals;
 
@@ -237,6 +238,28 @@ test('Runtime-Konfiguration nutzt sichere Defaults bei ungueltiger throttleTime'
 
     assert.strictEqual(hueManager.REQUEST_QUEUES.light.delayMs, 100);
     assert.strictEqual(hueManager.REQUEST_QUEUES.grouped_light.delayMs, 1000);
+});
+
+test('Loxone-Wertparser akzeptiert numerische Werte und lehnt Text ab', () => {
+    assert.deepStrictEqual(parseLoxoneCommandValue('0'), { number: 0, text: '0' });
+    assert.deepStrictEqual(parseLoxoneCommandValue('1'), { number: 1, text: '1' });
+    assert.deepStrictEqual(parseLoxoneCommandValue('50'), { number: 50, text: '50' });
+    assert.deepStrictEqual(parseLoxoneCommandValue('50063080'), { number: 50063080, text: '50063080' });
+
+    assert.throws(() => parseLoxoneCommandValue('foobar'), /Ungültiger Loxone-Wert/);
+    assert.throws(() => parseLoxoneCommandValue('12abc'), /Ungültiger Loxone-Wert/);
+    assert.throws(() => parseLoxoneCommandValue(''), /Ungültiger Loxone-Wert/);
+});
+
+test('executeCommand behandelt unbekannte Textwerte nicht als Ausschalten', async () => {
+    axiosPutCalls.length = 0;
+
+    await assert.rejects(
+        () => hueManager.executeCommand({ hue_uuid: 'light-invalid', hue_type: 'light', loxone_name: 'test_lampe' }, 'foobar'),
+        error => error.code === 'INVALID_LOXONE_VALUE'
+    );
+
+    assert.strictEqual(axiosPutCalls.length, 0);
 });
 
 // --- Mehrlampensynchronisierung ---
