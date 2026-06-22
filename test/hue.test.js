@@ -4,6 +4,7 @@ const Module = require('node:module');
 
 const originalLoad = Module._load;
 const axiosPutCalls = [];
+const axiosPutResponses = [];
 Module._load = function mockOptionalDeps(request, parent, isMain) {
     if (request === 'axios') {
         const axiosMock = async () => ({ data: { data: [] } });
@@ -11,6 +12,12 @@ Module._load = function mockOptionalDeps(request, parent, isMain) {
         axiosMock.post = async () => ({ data: [] });
         axiosMock.put = async (url, payload, options) => {
             axiosPutCalls.push({ url, payload, options });
+            if (axiosPutResponses.length) {
+                const response = axiosPutResponses.shift();
+                if (response instanceof Error) throw response;
+                if (typeof response === 'function') return response(url, payload, options);
+                return response;
+            }
             return { data: [] };
         };
         return axiosMock;
@@ -52,6 +59,8 @@ const {
     getHueSchedulerSpacingMs,
     scheduleHuePutTask,
     resetHueSchedulerForTests,
+    noteHueSchedulerRateLimit,
+    getHueSchedulerPenaltyUntil,
     putHueWithRateLimitRetry
 } = _internals;
 
@@ -332,6 +341,78 @@ test('HueScheduler respektiert grouped_light Mindestabstand', async () => {
     await Promise.all([first, second]);
 
     assert.ok(startedAt[1] - startedAt[0] >= 75, `Grouped Abstand war ${startedAt[1] - startedAt[0]}ms`);
+});
+
+test('HueScheduler setzt globale Penalty bei 429', () => {
+    resetHueSchedulerForTests();
+    const now = Date.now();
+
+    const penaltyUntil = noteHueSchedulerRateLimit(250, now);
+
+    assert.ok(penaltyUntil >= now + 250);
+    assert.strictEqual(getHueSchedulerPenaltyUntil(), penaltyUntil);
+});
+
+test('HueScheduler verzögert nächsten Task nach globaler 429 Penalty', async () => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
+        bridgeMaxCommandsPerSecond: 100
+    });
+
+    const startedAt = [];
+    const first = scheduleHuePutTask({
+        resourceType: 'light',
+        uuid: 'penalty-1',
+        payload: {},
+        loxoneName: 'penalty_1',
+        execute: async () => {
+            startedAt.push(Date.now());
+            noteHueSchedulerRateLimit(120);
+        }
+    });
+    const second = scheduleHuePutTask({
+        resourceType: 'light',
+        uuid: 'penalty-2',
+        payload: {},
+        loxoneName: 'penalty_2',
+        execute: async () => {
+            startedAt.push(Date.now());
+        }
+    });
+
+    await Promise.all([first, second]);
+
+    assert.ok(startedAt[1] - startedAt[0] >= 110, `Penalty Abstand war ${startedAt[1] - startedAt[0]}ms`);
+});
+
+test('Hue 429 Retry-After setzt globale Scheduler Penalty', async () => {
+    resetHueSchedulerForTests();
+    axiosPutCalls.length = 0;
+    axiosPutResponses.length = 0;
+    const error = new Error('rate limited');
+    error.response = { status: 429, headers: { 'retry-after': '0.1' } };
+    axiosPutResponses.push(error, { data: [] });
+
+    const before = Date.now();
+    await putHueWithRateLimitRetry('https://bridge/clip/v2/resource/light/retry-after', { on: { on: true } });
+
+    assert.strictEqual(axiosPutCalls.length, 2);
+    assert.ok(getHueSchedulerPenaltyUntil() >= before + 90);
+});
+
+test('Nicht-429 Fehler setzen keine globale Scheduler Penalty', async () => {
+    resetHueSchedulerForTests();
+    axiosPutResponses.length = 0;
+    const error = new Error('server error');
+    error.response = { status: 500, headers: {} };
+    axiosPutResponses.push(error);
+
+    await assert.rejects(
+        () => putHueWithRateLimitRetry('https://bridge/clip/v2/resource/light/error', { on: { on: true } }),
+        /server error/
+    );
+
+    assert.strictEqual(getHueSchedulerPenaltyUntil(), 0);
 });
 
 test('Loxone-Wertparser akzeptiert numerische Werte und lehnt Text ab', () => {
