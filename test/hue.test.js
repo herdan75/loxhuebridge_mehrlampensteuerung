@@ -3,12 +3,16 @@ const assert = require('node:assert');
 const Module = require('node:module');
 
 const originalLoad = Module._load;
+const axiosPutCalls = [];
 Module._load = function mockOptionalDeps(request, parent, isMain) {
     if (request === 'axios') {
         const axiosMock = async () => ({ data: { data: [] } });
         axiosMock.get = async () => ({ data: { data: [] } });
         axiosMock.post = async () => ({ data: [] });
-        axiosMock.put = async () => ({ data: [] });
+        axiosMock.put = async (url, payload, options) => {
+            axiosPutCalls.push({ url, payload, options });
+            return { data: [] };
+        };
         return axiosMock;
     }
     if (request === 'mqtt') {
@@ -40,7 +44,9 @@ const {
     buildMultiSyncGroupEffectTargets,
     buildAllLightEffectTargets,
     normalizeCommandName,
-    getRuntimeThrottleTimeMs
+    getRuntimeThrottleTimeMs,
+    getHueRequestTimeoutMs,
+    putHueWithRateLimitRetry
 } = _internals;
 
 // --- Farb-Mathematik ---
@@ -161,6 +167,35 @@ test('Hue Rate-Limit Retry respektiert Retry-After Header', () => {
     };
 
     assert.strictEqual(_internals.getHueRateLimitRetryDelayMs(error, 0), 2000);
+});
+
+test('Hue Request Timeout nutzt konfigurierten Wert und sichere Defaults', () => {
+    configManager.config.hueRequestTimeoutMs = 7000;
+    assert.strictEqual(getHueRequestTimeoutMs(), 7000);
+
+    configManager.config.hueRequestTimeoutMs = 'ungueltig';
+    assert.strictEqual(getHueRequestTimeoutMs(), _internals.DEFAULT_HUE_REQUEST_TIMEOUT_MS);
+
+    configManager.config.hueRequestTimeoutMs = -1;
+    assert.strictEqual(getHueRequestTimeoutMs(), _internals.DEFAULT_HUE_REQUEST_TIMEOUT_MS);
+
+    configManager.config.hueRequestTimeoutMs = 10;
+    assert.strictEqual(getHueRequestTimeoutMs(), 1000);
+
+    configManager.config.hueRequestTimeoutMs = 120000;
+    assert.strictEqual(getHueRequestTimeoutMs(), 60000);
+});
+
+test('Hue PUT Requests werden mit Timeout an axios uebergeben', async () => {
+    axiosPutCalls.length = 0;
+    configManager.config.appKey = 'app-key';
+    configManager.config.hueRequestTimeoutMs = 4321;
+
+    await putHueWithRateLimitRetry('https://bridge/clip/v2/resource/light/1', { on: { on: true } });
+
+    assert.strictEqual(axiosPutCalls.length, 1);
+    assert.strictEqual(axiosPutCalls[0].options.timeout, 4321);
+    assert.strictEqual(axiosPutCalls[0].options.headers['hue-application-key'], 'app-key');
 });
 
 test('Runtime-Konfiguration setzt Light Queue Delay aus throttleTime', () => {

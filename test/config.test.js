@@ -9,6 +9,7 @@ test('ConfigManager - Defaults & IsConfigured', (t) => {
     assert.strictEqual(configManager.isConfigured, false);
     assert.strictEqual(configManager.config.debug, false);
     assert.strictEqual(configManager.config.mqttPort, 1883);
+    assert.strictEqual(configManager.config.hueRequestTimeoutMs, 5000);
 });
 
 test('ConfigManager - Load and Save Config', (t) => {
