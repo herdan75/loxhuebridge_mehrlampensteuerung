@@ -1,4 +1,4 @@
-## [2.5.5-dev] - 2026-06-22
+## [2.5.5] - 2026-06-22
 ### Bugfixes
 - **Multi-Sync verwirft keine anderen Lampen mehr:** Geplante Lampenbefehle werden nicht mehr gruppenweit invalidiert. Neue Befehle ersetzen nur ältere Timer derselben Lampen-UUID.
 - **Live-Szenen mit mehreren Wellen stabiler:** Wenn Loxone eine Szene in mehreren kurzen Wellen sendet, bleiben bereits geplante Befehle anderer Lampen erhalten.
