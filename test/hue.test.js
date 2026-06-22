@@ -775,6 +775,103 @@ test('Multi-Sync Generation ist pro Gruppe isoliert', async () => {
     assert.deepStrictEqual(byUuid['multi-generation-b'], [70]);
 });
 
+test('Multi-Sync sendet unterschiedliche Lampen einer Gruppe auch bei zweiter Welle', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.config.transitionTime = 0;
+
+    const entries = Array.from({ length: 10 }, (_, index) => ({
+        hue_uuid: `live-wave-${index}`,
+        hue_type: 'light',
+        loxone_name: `live_wave_${index}`,
+        multi_sync: true,
+        multi_sync_group: 'a',
+        sync_offset_ms: 0
+    }));
+
+    await Promise.all(entries.map(entry => hueManager.executeCommand(entry, '40')));
+    await wait(30);
+    await hueManager.executeCommand(entries[9], '70');
+    await wait(450);
+
+    const byUuid = axiosPutCalls.reduce((acc, call) => {
+        const uuid = call.url.split('/').pop();
+        acc[uuid] = acc[uuid] || [];
+        acc[uuid].push(call.payload.dimming?.brightness);
+        return acc;
+    }, {});
+
+    assert.strictEqual(Object.keys(byUuid).length, 10);
+    for (let index = 0; index < 9; index++) {
+        assert.deepStrictEqual(byUuid[`live-wave-${index}`], [40]);
+    }
+    assert.deepStrictEqual(byUuid['live-wave-9'], [70]);
+});
+
+test('Multi-Sync neuer Befehl einer Lampe verwirft keine Timer anderer UUIDs', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.config.transitionTime = 0;
+
+    const entries = ['a', 'b', 'c', 'd'].map((name, index) => ({
+        hue_uuid: `uuid-independent-${name}`,
+        hue_type: 'light',
+        loxone_name: `uuid_independent_${name}`,
+        multi_sync: true,
+        multi_sync_group: 'a',
+        sync_offset_ms: index === 0 ? 120 : 0
+    }));
+
+    await Promise.all(entries.map(entry => hueManager.executeCommand(entry, '45')));
+    await wait(30);
+    await hueManager.executeCommand(entries[0], '80');
+    await wait(300);
+
+    const byUuid = axiosPutCalls.reduce((acc, call) => {
+        const uuid = call.url.split('/').pop();
+        acc[uuid] = acc[uuid] || [];
+        acc[uuid].push(call.payload.dimming?.brightness);
+        return acc;
+    }, {});
+
+    assert.deepStrictEqual(byUuid['uuid-independent-a'], [80]);
+    assert.deepStrictEqual(byUuid['uuid-independent-b'], [45]);
+    assert.deepStrictEqual(byUuid['uuid-independent-c'], [45]);
+    assert.deepStrictEqual(byUuid['uuid-independent-d'], [45]);
+});
+
+test('Multi-Sync Off ersetzt geplante Farbe derselben UUID', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'app-key';
+    configManager.config.transitionTime = 0;
+
+    const entry = {
+        hue_uuid: 'uuid-off-replaces-color',
+        hue_type: 'light',
+        loxone_name: 'uuid_off_replaces_color',
+        multi_sync: true,
+        multi_sync_group: 'a',
+        sync_offset_ms: 80
+    };
+
+    await hueManager.executeCommand(entry, '50060080');
+    await wait(30);
+    await hueManager.executeCommand(entry, '0');
+    await wait(220);
+
+    assert.strictEqual(axiosPutCalls.length, 1);
+    assert.deepStrictEqual(axiosPutCalls[0].payload, { on: { on: false } });
+});
+
 test('Effekt-Generation verwirft alte Timer derselben Multi-Sync-Gruppe', async () => {
     resetHueSchedulerForTests();
     setFastMultiSyncConfig();

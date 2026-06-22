@@ -1,3 +1,14 @@
+## [2.5.5-dev] - 2026-06-22
+### Bugfixes
+- **Multi-Sync verwirft keine anderen Lampen mehr:** Geplante Lampenbefehle werden nicht mehr gruppenweit invalidiert. Neue Befehle ersetzen nur ältere Timer derselben Lampen-UUID.
+- **Live-Szenen mit mehreren Wellen stabiler:** Wenn Loxone eine Szene in mehreren kurzen Wellen sendet, bleiben bereits geplante Befehle anderer Lampen erhalten.
+
+### Verbesserungen
+- **Eigenes Browser-Icon:** Dashboard und Setup verwenden nun ein loxHueBridge-Favicon statt der Standard-Weltkugel.
+
+### Tests
+- Regressionstests für 10 Lampen in einer Multi-Sync-Gruppe, zweite Befehlswelle, per-UUID-Ersetzung und Off-Payload-Überschreibung ergänzt.
+
 ## [2.5.4-dev] - 2026-06-22
 ### New Features
 - **Dashboard/API-Passwortschutz im UI:** Im System-Tab kann der Zugriffsschutz für Dashboard und `/api/*` aktiviert oder deaktiviert werden.
