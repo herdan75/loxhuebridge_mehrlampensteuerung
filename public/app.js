@@ -10,6 +10,7 @@
     let searchTimeout = null; 
     const MULTI_SYNC_GROUP_IDS = ['a', 'b', 'c', 'd', 'e'];
     let multiLightControlSettings = { groups: MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}` })) };
+    let securitySettings = { authEnabled: false, authUser: 'admin', passwordConfigured: false };
 
     function debugLog(msg) { console.log(`[UI] ${msg}`); }
 
@@ -623,6 +624,69 @@
         return html;
     }
 
+    function renderSecurityRows(security) {
+        const s = security || securitySettings;
+        return `
+            <tr><td colspan="2" style="background:#eee;font-weight:bold">Sicherheit / Zugriffsschutz</td></tr>
+            <tr>
+                <td>${infoLabel('Dashboard/API schützen', 'Schützt Webinterface und API mit Basic Auth. Loxone-Steuer-URLs bleiben bewusst frei, damit bestehende virtuelle Ausgänge weiter funktionieren.')}</td>
+                <td>
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" id="sys_authEnabled" ${s.authEnabled ? 'checked' : ''}>
+                        Dashboard/API mit Passwort schützen
+                    </label>
+                </td>
+            </tr>
+            <tr><td>${infoLabel('Benutzername', 'Benutzername für den Browser-Login. Standard ist admin.')}</td><td><input id="sys_authUser" value="${escapeHtml(s.authUser || 'admin')}"></td></tr>
+            <tr><td>${infoLabel('Neues Passwort', 'Leer lassen, wenn das bestehende Passwort beibehalten werden soll. Beim ersten Aktivieren ist ein Passwort erforderlich.')}</td><td><input type="password" id="sys_authPassword" autocomplete="new-password" placeholder="${s.passwordConfigured ? 'Passwort unverändert lassen' : 'Passwort setzen'}"></td></tr>
+            <tr><td>${infoLabel('Passwort wiederholen', 'Muss mit dem neuen Passwort übereinstimmen.')}</td><td><input type="password" id="sys_authPasswordRepeat" autocomplete="new-password"></td></tr>
+            <tr>
+                <td></td>
+                <td>
+                    <button class="add-btn" style="width:auto; margin:0;" onclick="saveSecuritySettings()">Zugriffsschutz speichern</button>
+                    <div id="securityStatusHint" style="font-size:0.75em; color:var(--text-muted); margin-top:6px;">
+                        ${s.passwordConfigured ? 'Passwort ist gesetzt.' : 'Noch kein Passwort gesetzt.'}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
+    async function saveSecuritySettings() {
+        const authEnabled = document.getElementById('sys_authEnabled').checked;
+        const authUser = document.getElementById('sys_authUser').value.trim() || 'admin';
+        const password = document.getElementById('sys_authPassword').value;
+        const repeat = document.getElementById('sys_authPasswordRepeat').value;
+
+        if (password !== repeat) {
+            alert('Passwörter stimmen nicht überein.');
+            return;
+        }
+        if (authEnabled && !securitySettings.passwordConfigured && !password) {
+            alert('Bitte zuerst ein Passwort setzen.');
+            return;
+        }
+
+        const res = await fetch('/api/security/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ authEnabled, authUser, password })
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok || result.success === false) {
+            alert(result.error || 'Zugriffsschutz konnte nicht gespeichert werden.');
+            return;
+        }
+
+        securitySettings = {
+            authEnabled: result.authEnabled,
+            authUser: result.authUser,
+            passwordConfigured: result.passwordConfigured
+        };
+        alert('Zugriffsschutz gespeichert. Beim nächsten Aufruf ist eine Anmeldung erforderlich.');
+        loadSettings();
+    }
+
     async function saveSettings() {
         const d = {};
         ['sys_loxIp', 'sys_loxPort', 'sys_mqttBroker', 'sys_mqttPort', 'sys_mqttUser', 'sys_mqttPass', 'sys_mqttPrefix'].forEach(id => d[id.replace('sys_','')] = document.getElementById(id).value);
@@ -655,7 +719,12 @@
 
     async function loadSettings() {
         try {
-            const s = await (await fetch('/api/settings')).json();
+            const [settingsRes, securityRes] = await Promise.all([
+                fetch('/api/settings'),
+                fetch('/api/security/status')
+            ]);
+            const s = await settingsRes.json();
+            securitySettings = securityRes.ok ? await securityRes.json() : securitySettings;
             multiLightControlSettings = s.multiLightControl || multiLightControlSettings;
             const table = document.getElementById('settingsTable');
             const v = (val) => val !== undefined ? val : '';
@@ -747,6 +816,8 @@
                         <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Deaktiviert Schreibzugriffe auf logs.db.</div>
                     </td>
                 </tr>
+
+                ${renderSecurityRows(securitySettings)}
 
                 <tr><td colspan="2" style="background:#eee;font-weight:bold">MQTT</td></tr>
                 <tr><td>${infoLabel('Aktivieren', 'Aktiviert parallele Statusausgabe an einen MQTT Broker.')}</td><td><input type="checkbox" id="sys_mqttEnabled" ${s.mqttEnabled?'checked':''}></td></tr>

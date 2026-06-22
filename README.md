@@ -11,7 +11,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.3-dev Mehrlampensteuerung
+## 🚀 Features V2.5.4-dev Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
@@ -148,7 +148,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.3-dev
+Version: 2.5.4-dev
 ```
 
 ### Zurück auf main
@@ -230,7 +230,22 @@ HTTP_PORT=8555
 LOXHUE_AUTH_TOKEN=
 ```
 
-Optional kann mit `LOXHUE_AUTH_TOKEN` ein Schutz für Dashboard und `/api/*` aktiviert werden. Ohne Token bleibt alles wie bisher. Loxone-Steuer-URLs wie `/wohnzimmer/50` bleiben aus Kompatibilitätsgründen frei. Zugriffe mit Token funktionieren per `Authorization: Bearer <token>`, Basic Auth oder `?token=<token>`.
+`LOXHUE_AUTH_TOKEN` bleibt als optionaler Legacy-/Umgebungszugang möglich. Empfohlen ist aber der Passwortschutz direkt im Webinterface.
+
+### Dashboard/API-Passwortschutz
+
+Im Tab **System** gibt es den Bereich **Sicherheit / Zugriffsschutz**. Dort kann der Schutz für Dashboard und `/api/*` aktiviert werden:
+
+```text
+[x] Dashboard/API mit Passwort schützen
+Benutzername: admin
+Neues Passwort: ********
+Passwort wiederholen: ********
+```
+
+Das Passwort wird nicht im Klartext gespeichert, sondern als Hash in `config.json`. Loxone-Steuer-URLs wie `/wohnzimmer/50` oder `/wohnzimmer/sunrise/30` bleiben bewusst ohne Auth erreichbar, damit bestehende virtuelle Ausgänge in Loxone weiter funktionieren.
+
+Der Zugriffsschutz ist für das lokale Netzwerk gedacht. Die Bridge sollte trotzdem nicht direkt aus dem Internet veröffentlicht werden.
 
 ---
 

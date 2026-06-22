@@ -37,6 +37,11 @@ Module._load = function mockOptionalDeps(request, parent, isMain) {
 const configManager = require('../lib/config');
 const routes = require('../lib/routes');
 
+function getRouteHandler(path) {
+    const layer = routes.stack.find(l => l.route && l.route.path === path);
+    return layer.route.stack[0].handle;
+}
+
 test('Routes - reservierte Discovery/API Pfade werden nicht als Loxone-Befehl behandelt', () => {
     assert.strictEqual(routes._internals.isReservedDiscoveryPath('api'), true);
     assert.strictEqual(routes._internals.isReservedDiscoveryPath('description.xml'), true);
@@ -97,13 +102,81 @@ test('Routes - ungültige Warmweiss-CT-Werte werden mit HTTP 400 abgelehnt', asy
     assert.strictEqual(statusCode, 400);
 });
 
+test('Routes - Security Status gibt keine Passwortdaten zurück', () => {
+    configManager.config.authEnabled = true;
+    configManager.config.authUser = 'admin';
+    configManager.config.authPasswordHash = 'pbkdf2$1$salt$hash';
+
+    const handler = getRouteHandler('/api/security/status');
+    let payload = null;
+    handler({}, { json: content => { payload = content; } });
+
+    assert.deepStrictEqual(payload, {
+        authEnabled: true,
+        authUser: 'admin',
+        passwordConfigured: true
+    });
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(payload, 'authPasswordHash'), false);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(payload, 'password'), false);
+});
+
+test('Routes - Security Aktivierung ohne Passwort wird abgelehnt', () => {
+    configManager.config.authEnabled = false;
+    configManager.config.authUser = 'admin';
+    configManager.config.authPasswordHash = '';
+
+    const handler = getRouteHandler('/api/security/settings');
+    let statusCode = null;
+    let payload = null;
+    const res = {
+        status(code) {
+            statusCode = code;
+            return this;
+        },
+        json(content) {
+            payload = content;
+            return this;
+        }
+    };
+
+    handler({ body: { authEnabled: true, authUser: 'admin' } }, res);
+
+    assert.strictEqual(statusCode, 400);
+    assert.strictEqual(payload.success, false);
+    assert.strictEqual(configManager.config.authEnabled, false);
+});
+
+test('Routes - Security speichert Passwort nur als Hash', () => {
+    configManager.config.authEnabled = false;
+    configManager.config.authUser = 'admin';
+    configManager.config.authPasswordHash = '';
+
+    const handler = getRouteHandler('/api/security/settings');
+    let payload = null;
+    const res = {
+        json(content) {
+            payload = content;
+            return this;
+        }
+    };
+
+    handler({ body: { authEnabled: true, authUser: 'admin', password: 'top-secret-pass' } }, res);
+
+    assert.strictEqual(payload.success, true);
+    assert.strictEqual(configManager.config.authEnabled, true);
+    assert.notStrictEqual(configManager.config.authPasswordHash, 'top-secret-pass');
+    assert.match(configManager.config.authPasswordHash, /^pbkdf2\$/);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(payload, 'authPasswordHash'), false);
+});
+
 test('Routes - Backup Redaction entfernt Zugangsdaten', () => {
     const redacted = routes._internals.redactConfigSecrets({
         bridgeIp: '192.168.1.10',
         appKey: 'hue-secret',
         mqttUser: 'mqtt-user',
         mqttPass: 'mqtt-secret',
-        authToken: 'auth-secret'
+        authToken: 'auth-secret',
+        authPasswordHash: 'pbkdf2$1$salt$hash'
     });
 
     assert.strictEqual(redacted.bridgeIp, '192.168.1.10');
@@ -111,6 +184,7 @@ test('Routes - Backup Redaction entfernt Zugangsdaten', () => {
     assert.strictEqual(redacted.appKey, '***');
     assert.strictEqual(redacted.mqttPass, '***');
     assert.strictEqual(redacted.authToken, '***');
+    assert.strictEqual(redacted.authPasswordHash, '***');
 });
 
 test('Routes - XML Exports escape special characters', async (t) => {

@@ -1,3 +1,16 @@
+## [2.5.4-dev] - 2026-06-22
+### New Features
+- **Dashboard/API-Passwortschutz im UI:** Im System-Tab kann der Zugriffsschutz für Dashboard und `/api/*` aktiviert oder deaktiviert werden.
+- **Passwort-Hash statt Klartext:** Neue Passwörter werden per PBKDF2-Hash gespeichert. Benutzername und Passwort können über `/api/security/settings` gesetzt werden.
+
+### Verbesserungen
+- **Loxone-Kompatibilität erhalten:** Steuer-URLs wie `/lampe/1` und `/lampe/sunrise/30` bleiben bewusst ohne Auth erreichbar.
+- **Security-Status ohne Secrets:** `/api/security/status` meldet nur Aktivierung, Benutzername und ob ein Passwort gesetzt ist.
+- **Backup-Redaction erweitert:** Reduzierte Backups enthalten weder Auth-Token noch Passwort-Hash.
+
+### Tests
+- Tests für Basic Auth mit Passwort-Hash, offene Loxone-Steuerpfade, Security-API, Aktivierung ohne Passwort und redigierte Auth-Secrets ergänzt.
+
 ## [2.5.3-dev] - 2026-06-22
 ### Verbesserungen
 - **UTF-8/Mojibake repariert:** `public/app.js` zeigt deutsche Texte, Sonderzeichen und Emojis wieder korrekt an.
