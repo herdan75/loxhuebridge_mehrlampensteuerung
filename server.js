@@ -8,6 +8,7 @@ const configManager = require('./lib/config');
 const mqttManager = require('./lib/mqtt');
 const hueManager = require('./lib/hue');
 const routes = require('./lib/routes');
+const auth = require('./lib/auth');
 
 console.log("🚀 [BOOT] loxHueBridge Prozess gestartet...");
 
@@ -37,6 +38,7 @@ if (configManager.isConfigured) {
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+app.use(auth.requireAuth);
 
 app.use((req, res, next) => { 
     if (req.path.startsWith('/api/') || req.path === '/setup.html') return next(); 

@@ -227,7 +227,10 @@ LOXONE_IP=192.168.1.20
 LOXONE_UDP_PORT=7000
 DEBUG=false
 HTTP_PORT=8555
+LOXHUE_AUTH_TOKEN=
 ```
+
+Optional kann mit `LOXHUE_AUTH_TOKEN` ein Schutz für Dashboard und `/api/*` aktiviert werden. Ohne Token bleibt alles wie bisher. Loxone-Steuer-URLs wie `/wohnzimmer/50` bleiben aus Kompatibilitätsgründen frei. Zugriffe mit Token funktionieren per `Authorization: Bearer <token>`, Basic Auth oder `?token=<token>`.
 
 ---
 
