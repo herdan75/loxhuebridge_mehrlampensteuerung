@@ -10,6 +10,7 @@ test('ConfigManager - Defaults & IsConfigured', (t) => {
     assert.strictEqual(configManager.config.debug, false);
     assert.strictEqual(configManager.config.mqttPort, 1883);
     assert.strictEqual(configManager.config.hueRequestTimeoutMs, 5000);
+    assert.strictEqual(configManager.config.multiLightControl.groups[0].sameClusterSpacingMs, 10);
 });
 
 test('ConfigManager - Load and Save Config', (t) => {

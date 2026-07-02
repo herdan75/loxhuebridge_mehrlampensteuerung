@@ -11,14 +11,15 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.8-dev Mehrlampensteuerung
+## 🚀 Features V2.5.9-dev Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
 * **Mehrlampensynchronisierung pro Lampe:** Einzelne Hue-Lampen können gezielt in einen gemeinsamen Sammel-/Batch-Ablauf aufgenommen werden.
 * **Multi-Sync Gruppen A-E:** Lampen können einer von fünf neutralen Gruppen zugeordnet werden, z. B. für Wohnzimmer, Büro oder Küche.
+* **Manuelle Ablauf-Cluster:** Innerhalb einer Multi-Sync-Gruppe können optisch zusammengehörige Lampen enger geplant werden, z. B. Deckenlampe top/bottom, Stehlampe oben/mitte/unten, TV oder Buddha.
 * **Freie Gruppennamen:** Gruppe A-E können im Systembereich individuell benannt werden.
-* **Eigene Einstellungen pro Gruppe:** Sammelfenster, Batchgröße, Batch-Pause, Lichtbefehle/s und Timing-Test sind pro Gruppe separat einstellbar.
+* **Eigene Einstellungen pro Gruppe:** Sammelfenster, Batchgröße, Batch-Pause, Lichtbefehle/s, Abstand innerhalb Ablauf-Cluster und Timing-Test sind pro Gruppe separat einstellbar.
 * **Globale Bridge-Sicherheitsgrenze:** `Max. Bridge-Befehle/s` begrenzt die Gesamtlast über alle Gruppen hinweg, falls mehrere Räume gleichzeitig schalten.
 * **Hue Effekt-Fallback für Gruppen/Räume/Zonen:** Effektbefehle wie `candle`, `fire`/`fireplace`, `prism`, `sparkle`, `opal`, `glisten`, `noeffect` und `sunrise` werden bei Hue Gruppen/Räumen/Zonen intern auf die enthaltenen einzelnen Hue-Lampen verteilt.
 * **Multi-Sync Timing auch für Gruppen-Effekte:** Wenn enthaltene Lampen einer loxHueBridge Gruppe A-E zugeordnet sind, werden deren Timing-/Rate-Einstellungen auch beim Effekt-Fallback verwendet.
@@ -32,7 +33,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 * **Sammelfenster für gleichzeitige Szenen:** Mehrere Loxone-Kommandos werden kurz gesammelt und dann gebündelt an die Hue Bridge gesendet.
 * **Batch-Steuerung:** Mehrere Lampen werden in kleinen Gruppen nahezu parallel gesendet, ohne die Hue Bridge unnötig zu überlasten.
 * **Einstellbares Hue-Limit:** Die maximale Anzahl Lichtbefehle pro Sekunde kann angepasst werden, um je nach Lampenanzahl das schnellste stabile Limit der eigenen Bridge zu finden.
-* **Timing-Test im UI:** Das Webinterface zeigt für die aktivierten Multi-Sync-Lampen Lampenanzahl, Mindestabstand, geschätzte Gesamtdauer und effektive Befehlsrate.
+* **Timing-Test im UI:** Das Webinterface zeigt für die aktivierten Multi-Sync-Lampen Lampenanzahl, Mindestabstand, Cluster-Abstand, geplante Reihenfolge und effektive Befehlsrate.
 * **Queue-Bypass nur für Multi-Sync-Lampen:** Die bestehende Queue bleibt für normale Lampen erhalten. Nur Lampen mit aktivierter Mehrlampensynchronisierung nutzen den neuen Ablauf.
 * **Robuster SSE/EventStream Parser:** Behebt sporadische Fehler wie:
     * `Unexpected end of JSON input`
@@ -148,7 +149,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.8-dev
+Version: 2.5.9-dev
 ```
 
 ### Zurück auf main
@@ -261,7 +262,16 @@ Empfohlene Einstellung für Ambient-Szenen mit mehreren einzelnen Hue-Lampen:
 [x] Sync
 [ ] Dynamics ignorieren, falls weiche Übergänge gewünscht sind
 [x] Mehrlampensynchronisierung
+Ablauf-Cluster: Deckenlampe
 Sync-Offset: 0 ms
+```
+
+Die drei Ebenen sind bewusst getrennt:
+
+```text
+Multi-Sync-Gruppe = Raum oder Szene, z. B. Wohnzimmer
+Ablauf-Cluster   = optisch zusammengehörige Lampen, z. B. Deckenlampe, Stehlampe, TV, Buddha
+Sync-Offset      = Feintuning pro einzelner Lampe
 ```
 
 ### Einstellungen pro Lampe
@@ -272,6 +282,7 @@ Sync-Offset: 0 ms
 | Dynamics ignorieren | Sendet Hue-Befehle ohne `dynamics.duration`. Das ist sinnvoll für reine Schaltaktoren oder wenn ein Gerät mit Hue Dynamics Probleme macht |
 | Mehrlampensynchronisierung | Diese einzelne Lampe nimmt am gemeinsamen Sammel-/Timing-Ablauf teil |
 | Gruppe | Zuordnung zu Gruppe A-E. Die Gruppennamen können in den globalen Einstellungen frei benannt werden, z. B. Wohnzimmer, Büro oder Küche |
+| Ablauf-Cluster | Lampen mit gleichem Cluster innerhalb derselben Gruppe werden enger nacheinander geplant. Wenn leer, läuft die Lampe als Einzel-Cluster |
 | Sync-Offset | Feinjustierung nur für diese Lampe. Negativ = früher, positiv = später |
 
 Den Sync-Offset erst nach einem Testlauf anpassen:
@@ -293,8 +304,21 @@ Die Werte können über das Webinterface angepasst werden:
 | Batchgröße | 4-10 | Anzahl Lampen pro logischem Block. Der Wert beeinflusst die zusätzliche Batch-Pause, die maximale Befehlsrate bleibt aber die wichtigste Grenze |
 | Batch-Pause | 30 ms | Zusätzliche Pause nach jedem Batch. Hilft, wenn die Bridge bei großen Gruppen kurz ins Stolpern kommt |
 | Max. Lichtbefehle/s | 10 | Limit der jeweiligen Gruppe. Für die eigene Bridge schrittweise erhöhen, z. B. 15, 20, 25/s |
+| Abstand im Ablauf-Cluster | 10 ms | Abstand zwischen Lampen mit gleichem Ablauf-Cluster. Niedrig halten für optisch zusammengehörige Lampen, zwischen Clustern gilt weiter `Max. Lichtbefehle/s` |
 
 Es gibt fünf neutrale Gruppen A-E. Alte Installationen ohne Gruppenzuordnung laufen automatisch in Gruppe A weiter. Jede Gruppe hat eigene Timingwerte, zusätzlich begrenzt **Max. Bridge-Befehle/s** die Gesamtlast über alle Gruppen.
+
+Beispiel für ein Wohnzimmer:
+
+```text
+Gruppe Wohnzimmer
+  Cluster Deckenlampe: deckenlampe_top, deckenlampe_bottom
+  Cluster Stehlampe: stehlampe_oben, stehlampe_mitte, stehlampe_unten
+  Cluster TV: tv_links, tv_rechts, tv_hintergrund
+  Cluster Buddha: buddha_links, buddha_rechts
+```
+
+Innerhalb eines Clusters werden die Befehle sehr eng geplant, z. B. mit 10 ms Abstand. Zwischen zwei Clustern bleibt der normale Abstand aus `Max. Lichtbefehle/s` aktiv. Die Hue Bridge bekommt weiterhin einzelne gültige `/resource/light/{uuid}`-Befehle; die Cluster-Logik verändert nur Reihenfolge und Timing in loxHueBridge.
 
 ### Hue Effekte auf Gruppen, Räume und Zonen
 
@@ -355,10 +379,13 @@ Der Bereich **Timing-Test** im Webinterface simuliert den Ablauf je Gruppe für 
 | --- | --- |
 | aktive Lampen | Anzahl einzelner Hue-Lampen mit aktivierter Mehrlampensynchronisierung |
 | Mindestabstand | rechnerischer Abstand zwischen zwei REST-Befehlen, abgeleitet aus `Max. Lichtbefehle/s` |
+| im Cluster | kurzer Abstand zwischen zwei Lampen mit gleichem Ablauf-Cluster |
 | bis letzter Befehl | geschätzte Zeit vom Auslösen bis zum letzten gesendeten Lampenbefehl |
 | effektiv | effektive Befehlsrate des geplanten Ablaufs |
 
-Beispiel mit 10 aktiven Lampen, `Sammelfenster 120 ms`, `Batchgröße 10`, `Batch-Pause 30 ms`, `Max. Lichtbefehle/s 10`: Der Mindestabstand beträgt 100 ms und der letzte Befehl wird nach ca. 1020 ms gesendet. Das ist Hue-konservativ. Mit 20/s sinkt der Mindestabstand auf 50 ms und derselbe Ablauf wirkt deutlich zeitnäher.
+Die Detailzeilen der Vorschau zeigen zusätzlich Cluster, Lampenname, Offset und geplanten Zeitpunkt. So ist direkt sichtbar, ob z. B. `deckenlampe_top` und `deckenlampe_bottom` nur ca. 10 ms auseinander liegen.
+
+Beispiel mit 10 aktiven Lampen, `Sammelfenster 120 ms`, `Batchgröße 10`, `Batch-Pause 30 ms`, `Max. Lichtbefehle/s 10`: Der Mindestabstand zwischen verschiedenen Clustern beträgt 100 ms. Innerhalb eines Ablauf-Clusters kann der Abstand z. B. 10 ms betragen. Mit 20/s sinkt der Abstand zwischen Clustern auf 50 ms und derselbe Ablauf wirkt deutlich zeitnäher.
 
 ### Praxiswerte zum Finden des Limits
 

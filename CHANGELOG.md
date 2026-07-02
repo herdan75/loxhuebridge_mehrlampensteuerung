@@ -1,3 +1,12 @@
+## [2.5.9-dev] - In Entwicklung
+### Verbesserungen
+- **Manuelle Ablauf-Cluster für Multi-Sync:** Lampen innerhalb einer Multi-Sync-Gruppe können zusätzlich einem Ablauf-Cluster wie Deckenlampe, Stehlampe, TV oder Buddha zugeordnet werden.
+- **Engere Cluster-Planung:** Lampen mit gleichem Ablauf-Cluster werden im Zeitplan enger nacheinander gesendet, während zwischen verschiedenen Clustern weiterhin der normale Hue-Mindestabstand gilt.
+- **Timing-Vorschau erweitert:** Die Multi-Sync-Vorschau zeigt nun Cluster, Lampe, Offset und geplanten Zeitpunkt.
+
+### Tests
+- Tests für Cluster-Scheduling, Offset-Reihenfolge, Fallback ohne Cluster, Mapping-Validierung und Preview-Zeiten ergänzt.
+
 ## [2.5.8-dev] - In Entwicklung
 ### Entwicklung
 - Entwicklungszweig nach Release 2.5.7 fortgeführt.

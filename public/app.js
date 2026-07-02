@@ -451,6 +451,7 @@
             sync_lox: true,
             ignore_dynamics: false,
             multi_sync: false,
+            sync_cluster: '',
             sync_offset_ms: 0
         });
         await fetch('/api/mapping', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(mappings)});
@@ -509,7 +510,8 @@
             syncWindowMs: numberValue(`sys_multiSyncWindowMs_${groupId}`, 120),
             batchSize: Math.max(1, numberValue(`sys_multiBatchSize_${groupId}`, 4)),
             batchDelayMs: Math.max(0, numberValue(`sys_multiBatchDelayMs_${groupId}`, 30)),
-            maxCommandsPerSecond: Math.max(1, numberValue(`sys_multiMaxCommandsPerSecond_${groupId}`, 10))
+            maxCommandsPerSecond: Math.max(1, numberValue(`sys_multiMaxCommandsPerSecond_${groupId}`, 10)),
+            sameClusterSpacingMs: Math.max(0, Math.min(50, numberValue(`sys_multiSameClusterSpacingMs_${groupId}`, 10)))
         };
     }
 
@@ -531,29 +533,84 @@
                 .filter(m => m.hue_type === 'light' && m.multi_sync === true && (m.multi_sync_group || 'a') === id)
                 .map((entry, index) => {
                     const offset = normalizeSyncOffset(entry.sync_offset_ms, 0);
-                    return { entry, offset, originalIndex: index };
+                    const cluster = normalizeSyncCluster(entry.sync_cluster);
+                    return {
+                        entry,
+                        offset,
+                        originalIndex: index,
+                        clusterKey: cluster ? `manual:${cluster.toLowerCase()}` : `single:${entry.hue_uuid || entry.loxone_name || index}`,
+                        clusterName: cluster || 'Einzel'
+                    };
                 });
 
             const activeLights = items.length;
             const commandSpacingMs = Math.ceil(1000 / settings.maxCommandsPerSecond);
+            const sameClusterSpacingMs = settings.sameClusterSpacingMs;
             const baseDelayMs = activeLights ? Math.max(0, -Math.min(...items.map(item => item.offset))) : 0;
             let lastDelay = -commandSpacingMs;
-            const scheduleItems = items
+            let previousClusterKey = null;
+            let commandIndex = 0;
+            const clusters = new Map();
+
+            items.forEach(item => {
+                if (!clusters.has(item.clusterKey)) {
+                    clusters.set(item.clusterKey, {
+                        key: item.clusterKey,
+                        name: item.clusterName,
+                        firstIndex: item.originalIndex,
+                        minOffset: item.offset,
+                        items: []
+                    });
+                }
+                const cluster = clusters.get(item.clusterKey);
+                cluster.minOffset = Math.min(cluster.minOffset, item.offset);
+                cluster.items.push(item);
+            });
+
+            const scheduleItems = [];
+            Array.from(clusters.values())
                 .sort((a, b) => {
-                    if (a.offset !== b.offset) return a.offset - b.offset;
-                    return a.originalIndex - b.originalIndex;
+                    if (a.minOffset !== b.minOffset) return a.minOffset - b.minOffset;
+                    return a.firstIndex - b.firstIndex;
                 })
-                .map((item, sortedIndex) => {
-                    const batchDelay = Math.floor(sortedIndex / settings.batchSize) * settings.batchDelayMs;
-                    return {
-                        item,
-                        requestedDelay: Math.max(0, Math.round(baseDelayMs + item.offset + (sortedIndex * commandSpacingMs) + batchDelay))
-                    };
-                })
-                .map(item => {
-                    const delay = Math.max(item.requestedDelay, lastDelay + commandSpacingMs);
-                    lastDelay = delay;
-                    return { ...item, delay };
+                .forEach((cluster, clusterIndex) => {
+                    cluster.items
+                        .sort((a, b) => {
+                            if (a.offset !== b.offset) return a.offset - b.offset;
+                            return a.originalIndex - b.originalIndex;
+                        })
+                        .forEach((item, withinClusterIndex) => {
+                            const spacingFromPrevious = previousClusterKey === item.clusterKey ? sameClusterSpacingMs : commandSpacingMs;
+                            const batchDelay = previousClusterKey === item.clusterKey ? 0 : Math.floor(commandIndex / settings.batchSize) * settings.batchDelayMs;
+                            const requestedDelay = Math.max(0, Math.round(
+                                baseDelayMs
+                                + cluster.minOffset
+                                + (clusterIndex * commandSpacingMs)
+                                + Math.max(0, item.offset - cluster.minOffset)
+                                + (withinClusterIndex * sameClusterSpacingMs)
+                                + batchDelay
+                            ));
+                            const delay = Math.max(requestedDelay, lastDelay + spacingFromPrevious);
+
+                            scheduleItems.push({ item, requestedDelay, delay });
+                            lastDelay = delay;
+                            previousClusterKey = item.clusterKey;
+                            commandIndex += 1;
+                        });
+                });
+
+            scheduleItems.forEach((schedule, index) => {
+                const next = scheduleItems[index + 1];
+                schedule.schedulerSpacingMs = next && next.item.clusterKey === schedule.item.clusterKey
+                    ? sameClusterSpacingMs
+                    : commandSpacingMs;
+            });
+
+            const scheduleItemsSorted = scheduleItems
+                .slice()
+                .sort((a, b) => {
+                    if (a.delay !== b.delay) return a.delay - b.delay;
+                    return a.item.originalIndex - b.item.originalIndex;
                 });
 
             const lastCommandMs = scheduleItems.length ? Math.max(...scheduleItems.map(item => item.delay)) : 0;
@@ -566,8 +623,9 @@
                 : (settings.maxCommandsPerSecond <= 25 ? 'Schnell testen' : 'Experimentell');
             const scheduleHtml = scheduleItems.length
                 ? `<div style="margin-top:8px; max-height:150px; overflow:auto; border-top:1px solid var(--border); padding-top:6px;">
-                    ${scheduleItems.map(schedule => `
-                        <div style="display:grid; grid-template-columns: minmax(0,1fr) 70px 80px; gap:8px; font-size:0.75rem; padding:2px 0;">
+                    ${scheduleItemsSorted.map(schedule => `
+                        <div style="display:grid; grid-template-columns: minmax(70px,0.8fr) minmax(0,1.4fr) 70px 80px; gap:8px; font-size:0.75rem; padding:2px 0;">
+                            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(schedule.item.clusterName)}</span>
                             <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(schedule.item.entry.loxone_name)}</span>
                             <span>${schedule.item.offset > 0 ? '+' : ''}${schedule.item.offset} ms</span>
                             <span>${Math.round(settings.syncWindowMs + schedule.delay)} ms</span>
@@ -580,6 +638,7 @@
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(115px, 1fr)); gap:8px;">
                     <div><b>${activeLights}</b><br><span>aktive Lampen</span></div>
                     <div><b>${commandSpacingMs} ms</b><br><span>Mindestabstand</span></div>
+                    <div><b>${sameClusterSpacingMs} ms</b><br><span>im Cluster</span></div>
                     <div><b>${Math.round(totalMs)} ms</b><br><span>bis letzter Befehl</span></div>
                     <div><b>${effectiveRate}/s</b><br><span>effektiv</span></div>
                 </div>
@@ -593,7 +652,7 @@
 
     function renderMultiSyncGroupRows(settings) {
         const cfg = settings || {};
-        const groups = cfg.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}`, syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 10 }));
+        const groups = cfg.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}`, syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 10, sameClusterSpacingMs: 10 }));
         let html = `
             <tr>
                 <td>${infoLabel('Max. Bridge-Befehle/s', 'Globale Obergrenze für alle Hue-Befehle aus Multi-Sync-Gruppen. Senken, wenn HUE RATE LIMIT 429 erscheint oder mehrere Gruppen gleichzeitig schalten.')}</td>
@@ -621,6 +680,7 @@
                                 <tr><td>${infoLabel('Batchgröße', 'Anzahl Lampen, nach denen eine zusätzliche Batch-Pause eingeplant wird. Bei 10 Lampen und Batchgröße 10 gibt es praktisch keinen Zwischenstopp.')}</td><td><input type="number" id="sys_multiBatchSize_${id}" min="1" max="20" step="1" value="${group.batchSize ?? 4}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
                                 <tr><td>${infoLabel('Batch-Pause', 'Zusätzliche Pause nach jedem Batch. Hilft nur, wenn die Batchgröße kleiner ist als die Lampenanzahl. Bei Batchgröße 10 und 10 Lampen meist 0 ms sinnvoll.')}</td><td><div class="slider-container"><input type="range" id="sys_multiBatchDelayMs_${id}" min="0" max="300" step="10" value="${group.batchDelayMs ?? 30}" oninput="document.getElementById('val_multiBatchDelay_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiBatchDelay_${id}" class="slider-val">${group.batchDelayMs ?? 30} ms</span></div></td></tr>
                                 <tr><td>${infoLabel('Max. Lichtbefehle/s', 'Obergrenze für diese Gruppe. Wichtigster Wert gegen Hue 429. Niedriger = stabiler, höher = schneller. Typisch 15-20/s testen.')}</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
+                                <tr><td>${infoLabel('Abstand im Ablauf-Cluster', 'Kleiner Abstand zwischen Lampen mit gleichem Ablauf-Cluster, z. B. Deckenlampe top/bottom. Zwischen Clustern gilt weiter Max. Lichtbefehle/s.')}</td><td><div class="slider-container"><input type="range" id="sys_multiSameClusterSpacingMs_${id}" min="0" max="50" step="1" value="${group.sameClusterSpacingMs ?? 10}" oninput="document.getElementById('val_multiSameClusterSpacing_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSameClusterSpacing_${id}" class="slider-val">${group.sameClusterSpacingMs ?? 10} ms</span></div></td></tr>
                                 <tr><td>${infoLabel('Timing-Test', 'Simulation für diese Gruppe: Anzahl aktiver Lampen, Mindestabstand, Zeitpunkt des letzten Befehls und effektive Befehlsrate.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
                             </table>
                         </details>
@@ -848,6 +908,7 @@
                 ignore_dynamics: entry.ignore_dynamics === true,
                 multi_sync: entry.multi_sync === true,
                 multi_sync_group: normalizeMultiSyncGroup(entry.multi_sync_group),
+                sync_cluster: normalizeSyncCluster(entry.sync_cluster),
                 sync_offset_ms: offset
             },
             values: {
@@ -855,6 +916,7 @@
                 ignore_dynamics: entry.ignore_dynamics === true,
                 multi_sync: entry.multi_sync === true,
                 multi_sync_group: normalizeMultiSyncGroup(entry.multi_sync_group),
+                sync_cluster: normalizeSyncCluster(entry.sync_cluster),
                 sync_offset_ms: offset
             }
         };
@@ -863,6 +925,10 @@
     function normalizeMultiSyncGroup(value) {
         const group = String(value || 'a').toLowerCase();
         return MULTI_SYNC_GROUP_IDS.includes(group) ? group : 'a';
+    }
+
+    function normalizeSyncCluster(value) {
+        return String(value || '').trim().substring(0, 40);
     }
 
     function normalizeSyncOffset(value, fallback = null) {
@@ -897,6 +963,10 @@
         }
         if (key === 'multi_sync_group') {
             detailsDraft.values.multi_sync_group = normalizeMultiSyncGroup(value);
+            return;
+        }
+        if (key === 'sync_cluster') {
+            detailsDraft.values.sync_cluster = normalizeSyncCluster(value);
             return;
         }
         detailsDraft.values[key] = value === true;
@@ -990,6 +1060,15 @@
             const groupOptions = (multiLightControlSettings.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}` })))
                 .map(group => `<option value="${group.id}" ${detailsDraft.values.multi_sync_group === group.id ? 'selected' : ''}>${escapeHtml(group.name || `Gruppe ${group.id.toUpperCase()}`)}</option>`)
                 .join('');
+            const clusterOptions = Array.from(new Set(
+                mappings
+                    .filter(m => m.hue_type === 'light' && normalizeMultiSyncGroup(m.multi_sync_group) === detailsDraft.values.multi_sync_group)
+                    .map(m => normalizeSyncCluster(m.sync_cluster))
+                    .filter(Boolean)
+            )).sort((a, b) => a.localeCompare(b));
+            const clusterOptionsHtml = clusterOptions
+                .map(cluster => `<option value="${escapeHtml(cluster)}"></option>`)
+                .join('');
 
             content += `
                 <h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">⚙️ Einstellungen</h3>
@@ -1025,6 +1104,14 @@
                         <select onchange="updateDetailsDraft('multi_sync_group', this.value)" style="max-width:180px;">
                             ${groupOptions}
                         </select>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-left:24px; margin-top:10px; flex-wrap:wrap;">
+                        <span style="font-size:0.85rem; color:var(--text-muted); min-width:90px;">Ablauf-Cluster</span>
+                        <input id="details_syncCluster" list="details_syncClusterOptions" maxlength="40" value="${escapeHtml(detailsDraft.values.sync_cluster)}" oninput="updateDetailsDraft('sync_cluster', this.value)" placeholder="z. B. Deckenlampe" style="max-width:180px;">
+                        <datalist id="details_syncClusterOptions">${clusterOptionsHtml}</datalist>
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--text-muted); margin-left:24px; margin-top:4px;">
+                        Lampen mit gleichem Ablauf-Cluster werden im Zeitplan eng nacheinander gesendet.
                     </div>
                     <div style="display:flex; align-items:center; gap:10px; margin-left:24px; margin-top:10px; flex-wrap:wrap;">
                         <span style="font-size:0.85rem; color:var(--text-muted); min-width:90px;">Sync-Offset</span>

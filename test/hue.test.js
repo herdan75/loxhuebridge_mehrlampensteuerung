@@ -689,6 +689,130 @@ test('Multi-Sync Scheduler erzwingt Mindestabstand auch bei gleichen Offsets sta
     }
 });
 
+test('Multi-Sync Scheduler plant Lampen im gleichen Ablauf-Cluster eng', () => {
+    const items = [
+        { entry: { loxone_name: 'datura_top', hue_uuid: 'top', sync_cluster: 'Deckenlampe', sync_offset_ms: 0 } },
+        { entry: { loxone_name: 'datura_bottom', hue_uuid: 'bottom', sync_cluster: 'Deckenlampe', sync_offset_ms: 0 } }
+    ];
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 10,
+        batchDelayMs: 0,
+        maxCommandsPerSecond: 20,
+        sameClusterSpacingMs: 10
+    });
+
+    assert.strictEqual(schedule[1].delayMs - schedule[0].delayMs, 10);
+    assert.strictEqual(schedule[0].schedulerSpacingMs, 10);
+    assert.strictEqual(schedule[1].schedulerSpacingMs, 50);
+});
+
+test('Multi-Sync Scheduler trennt unterschiedliche Ablauf-Cluster normal', () => {
+    const items = [
+        { entry: { loxone_name: 'datura_top', hue_uuid: 'top', sync_cluster: 'Deckenlampe', sync_offset_ms: 0 } },
+        { entry: { loxone_name: 'tv_links', hue_uuid: 'tv-left', sync_cluster: 'TV', sync_offset_ms: 0 } }
+    ];
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 10,
+        batchDelayMs: 0,
+        maxCommandsPerSecond: 20,
+        sameClusterSpacingMs: 10
+    });
+
+    assert.ok(schedule[1].delayMs - schedule[0].delayMs >= 50);
+});
+
+test('Multi-Sync Scheduler gruppiert gemischte Ablauf-Cluster stabil', () => {
+    const items = [
+        { entry: { loxone_name: 'decken_top', hue_uuid: 'd1', sync_cluster: 'Deckenlampe', sync_offset_ms: -50 } },
+        { entry: { loxone_name: 'decken_bottom', hue_uuid: 'd2', sync_cluster: 'Deckenlampe', sync_offset_ms: -50 } },
+        { entry: { loxone_name: 'stehlampe_oben', hue_uuid: 's1', sync_cluster: 'Stehlampe', sync_offset_ms: 20 } },
+        { entry: { loxone_name: 'stehlampe_mitte', hue_uuid: 's2', sync_cluster: 'Stehlampe', sync_offset_ms: 20 } },
+        { entry: { loxone_name: 'stehlampe_unten', hue_uuid: 's3', sync_cluster: 'Stehlampe', sync_offset_ms: 20 } },
+        { entry: { loxone_name: 'tv_links', hue_uuid: 't1', sync_cluster: 'TV', sync_offset_ms: 20 } },
+        { entry: { loxone_name: 'tv_rechts', hue_uuid: 't2', sync_cluster: 'TV', sync_offset_ms: 20 } },
+        { entry: { loxone_name: 'tv_hintergrund', hue_uuid: 't3', sync_cluster: 'TV', sync_offset_ms: 20 } },
+        { entry: { loxone_name: 'buddha_links', hue_uuid: 'b1', sync_cluster: 'Buddha', sync_offset_ms: 20 } },
+        { entry: { loxone_name: 'buddha_rechts', hue_uuid: 'b2', sync_cluster: 'Buddha', sync_offset_ms: 20 } }
+    ];
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 10,
+        batchDelayMs: 0,
+        maxCommandsPerSecond: 20,
+        sameClusterSpacingMs: 10
+    });
+
+    assert.deepStrictEqual(
+        schedule.slice(0, 2).map(item => item.item.entry.loxone_name),
+        ['decken_top', 'decken_bottom']
+    );
+
+    const byName = Object.fromEntries(schedule.map(item => [item.item.entry.loxone_name, item]));
+    assert.strictEqual(byName.decken_bottom.delayMs - byName.decken_top.delayMs, 10);
+    assert.strictEqual(byName.stehlampe_mitte.delayMs - byName.stehlampe_oben.delayMs, 10);
+    assert.strictEqual(byName.stehlampe_unten.delayMs - byName.stehlampe_mitte.delayMs, 10);
+    assert.strictEqual(byName.tv_rechts.delayMs - byName.tv_links.delayMs, 10);
+    assert.strictEqual(byName.tv_hintergrund.delayMs - byName.tv_rechts.delayMs, 10);
+    assert.strictEqual(byName.buddha_rechts.delayMs - byName.buddha_links.delayMs, 10);
+});
+
+test('Multi-Sync Scheduler sortiert Offsets innerhalb eines Ablauf-Clusters', () => {
+    const items = [
+        { entry: { loxone_name: 'spaeter', hue_uuid: 'late', sync_cluster: 'Deckenlampe', sync_offset_ms: 20 } },
+        { entry: { loxone_name: 'frueher', hue_uuid: 'early', sync_cluster: 'Deckenlampe', sync_offset_ms: -50 } }
+    ];
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 10,
+        batchDelayMs: 0,
+        maxCommandsPerSecond: 20,
+        sameClusterSpacingMs: 10
+    });
+
+    assert.deepStrictEqual(schedule.map(item => item.item.entry.loxone_name), ['frueher', 'spaeter']);
+    assert.ok(schedule.every(item => item.delayMs >= 0));
+});
+
+test('Multi-Sync Scheduler nutzt ohne Ablauf-Cluster weiterhin Einzel-Fallback', () => {
+    const items = [
+        { entry: { loxone_name: 'a', hue_uuid: 'uuid-a', sync_offset_ms: 0 } },
+        { entry: { loxone_name: 'b', hue_uuid: 'uuid-b', sync_offset_ms: 0 } }
+    ];
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 10,
+        batchDelayMs: 0,
+        maxCommandsPerSecond: 20,
+        sameClusterSpacingMs: 10
+    });
+
+    assert.strictEqual(schedule[1].delayMs - schedule[0].delayMs, 50);
+});
+
+test('Multi-Sync Scheduler haelt Ablauf-Cluster auch bei kleiner Batchgroesse eng', () => {
+    const items = [
+        { entry: { loxone_name: 'top', hue_uuid: 'top', sync_cluster: 'Deckenlampe', sync_offset_ms: 0 } },
+        { entry: { loxone_name: 'bottom', hue_uuid: 'bottom', sync_cluster: 'Deckenlampe', sync_offset_ms: 0 } }
+    ];
+
+    const schedule = buildMultiSyncSchedule(items, {
+        syncWindowMs: 120,
+        batchSize: 1,
+        batchDelayMs: 100,
+        maxCommandsPerSecond: 20,
+        sameClusterSpacingMs: 10
+    });
+
+    assert.strictEqual(schedule[1].delayMs - schedule[0].delayMs, 10);
+});
+
 test('Multi-Sync Payload-Merge führt kompatible Teilbefehle zusammen', () => {
     assert.deepStrictEqual(
         mergeHuePayload({ on: { on: true } }, { dimming: { brightness: 55 } }),
@@ -1018,14 +1142,14 @@ test('Multi-Sync Preview trennt Lampen nach Gruppe', () => {
     configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({
         bridgeMaxCommandsPerSecond: 30,
         groups: [
-            { id: 'a', name: 'Wohnzimmer', syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 20 },
+            { id: 'a', name: 'Wohnzimmer', syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 20, sameClusterSpacingMs: 10 },
             { id: 'b', name: 'Buero', syncWindowMs: 100, batchSize: 2, batchDelayMs: 20, maxCommandsPerSecond: 10 }
         ]
     });
 
     const preview = hueManager.getMultiSyncPreview([
-        { hue_type: 'light', multi_sync: true, multi_sync_group: 'a', loxone_name: 'wohn_1' },
-        { hue_type: 'light', multi_sync: true, multi_sync_group: 'a', loxone_name: 'wohn_2' },
+        { hue_type: 'light', hue_uuid: 'wohn-1', multi_sync: true, multi_sync_group: 'a', sync_cluster: 'TV', loxone_name: 'wohn_1' },
+        { hue_type: 'light', hue_uuid: 'wohn-2', multi_sync: true, multi_sync_group: 'a', sync_cluster: 'TV', loxone_name: 'wohn_2' },
         { hue_type: 'light', multi_sync: true, multi_sync_group: 'b', loxone_name: 'buero_1' },
         { hue_type: 'group', multi_sync: true, multi_sync_group: 'a', loxone_name: 'hue_group' }
     ]);
@@ -1036,6 +1160,8 @@ test('Multi-Sync Preview trennt Lampen nach Gruppe', () => {
     assert.strictEqual(preview.bridgeMaxCommandsPerSecond, 30);
     assert.strictEqual(groupA.settings.name, 'Wohnzimmer');
     assert.strictEqual(groupA.activeLights, 2);
+    assert.strictEqual(groupA.schedule[0].syncCluster, 'TV');
+    assert.strictEqual(groupA.schedule[1].delayMs - groupA.schedule[0].delayMs, 10);
     assert.strictEqual(groupB.settings.name, 'Buero');
     assert.strictEqual(groupB.activeLights, 1);
 });

@@ -221,6 +221,7 @@ test('Routes - Mapping Settings speichert Sync-Offset und erlaubte Felder', () =
             ignore_dynamics: true,
             multi_sync: true,
             multi_sync_group: 'b',
+            sync_cluster: ' Deckenlampe ',
             sync_offset_ms: -50,
             hue_uuid: 'evil-change'
         }
@@ -229,6 +230,7 @@ test('Routes - Mapping Settings speichert Sync-Offset und erlaubte Felder', () =
     assert.strictEqual(payload.success, true);
     assert.strictEqual(configManager.mapping[0].sync_offset_ms, -50);
     assert.strictEqual(configManager.mapping[0].multi_sync_group, 'b');
+    assert.strictEqual(configManager.mapping[0].sync_cluster, 'Deckenlampe');
     assert.strictEqual(configManager.mapping[0].multi_sync, true);
     assert.strictEqual(configManager.mapping[0].sync_lox, false);
     assert.strictEqual(configManager.mapping[0].ignore_dynamics, true);
@@ -242,6 +244,9 @@ test('Routes - Mapping Settings validiert und begrenzt Sync-Offset', () => {
     assert.strictEqual(routes._internals.parseSyncOffsetSetting(1007), 1000);
     assert.strictEqual(routes._internals.parseSyncOffsetSetting(23), 20);
     assert.throws(() => routes._internals.parseSyncOffsetSetting('abc'), /sync_offset_ms/);
+    assert.strictEqual(routes._internals.parseSyncClusterSetting(' TV '), 'TV');
+    assert.strictEqual(routes._internals.parseSyncClusterSetting(null), '');
+    assert.strictEqual(routes._internals.parseSyncClusterSetting('123456789012345678901234567890123456789012345'), '1234567890123456789012345678901234567890');
 });
 
 test('Routes - Mapping Settings lehnt ungültige Felder ab', () => {
