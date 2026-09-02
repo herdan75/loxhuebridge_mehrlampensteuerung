@@ -204,7 +204,63 @@
             div.innerHTML += bridgeHtml + capsHtml;
 
         } catch(e) {
-            div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Bridge-Diagnose nicht verfügbar: ${e.message}</div>`;
+            div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Bridge-Diagnose nicht verfügbar: ${escapeHtml(e.message)}</div>`;
+        }
+
+        try {
+            const lampRes = await fetch('/api/diagnostics/lampen');
+            if (!lampRes.ok) throw new Error('Lampendiagnose nicht verfügbar');
+            const lampRows = await lampRes.json();
+            let lampHtml = '<h3 style="margin-top: 30px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">📶 Zuverlässigkeit der Lampenbefehle</h3>';
+
+            if (!lampRows.length) {
+                lampHtml += `<p style="color:var(--text-muted)">Noch keine Lampenbefehle seit dem letzten Neustart erfasst.</p>`;
+            } else {
+                lampHtml += `<div class="diag-scroll"><table class="settings-table diag-table"><thead><tr>
+                    <th>Loxone Name</th>
+                    <th>Befehle</th>
+                    <th>Bestätigt</th>
+                    <th>Widersprüche</th>
+                    <th>Quote</th>
+                    <th>Verifiziert</th>
+                    <th>Nachgesteuert</th>
+                    <th>Communication Errors</th>
+                    <th>Mapping</th>
+                    <th>Letzter Widerspruch</th>
+                </tr></thead><tbody>`;
+
+                lampRows.forEach(row => {
+                    const quote = Number(row.quote || 0);
+                    const problem = (row.widersprueche || 0) > 0 || (row.communicationErrors || 0) > 0;
+                    const color = !problem ? 'var(--success,#4caf50)' : (quote >= 10 ? 'red' : 'orange');
+                    const mapping = row.mapping || {};
+                    const mappingText = [
+                        mapping.deviceName ? `Device: ${mapping.deviceName}` : '',
+                        mapping.multiSync ? `Sync: ${mapping.multiSyncGroup || '-'} / ${mapping.syncCluster || '-'}` : 'Sync: aus'
+                    ].filter(Boolean).join('<br>');
+                    const last = row.letzterWiderspruch
+                        ? `${escapeHtml(row.letzterWiderspruch.erwartet || '')} → ${escapeHtml(row.letzterWiderspruch.gemeldet || '')}<br><span style="color:var(--text-muted)">nach ${Math.round((row.letzterWiderspruch.nachMs || 0) / 1000)} s</span>`
+                        : (row.letzterFehler ? escapeHtml(row.letzterFehler) : '<span style="color:#ccc">-</span>');
+
+                    lampHtml += `<tr>
+                        <td><div style="font-weight:bold">${escapeHtml(row.name || row.uuid)}</div><div style="font-size:0.75em;color:#888;font-family:monospace">${escapeHtml(row.uuid)}</div></td>
+                        <td style="text-align:right">${row.befehle || 0}</td>
+                        <td style="text-align:right">${row.bestaetigt || 0}</td>
+                        <td style="text-align:right;color:${color};font-weight:bold">${row.widersprueche || 0}</td>
+                        <td style="text-align:right;color:${color}">${quote} %</td>
+                        <td style="text-align:right">${row.verifiziert || 0}</td>
+                        <td style="text-align:right">${row.nachgesteuert || 0}</td>
+                        <td style="text-align:right;color:${(row.communicationErrors || 0) ? 'orange' : 'inherit'}">${row.communicationErrors || 0}</td>
+                        <td style="font-size:0.8em">${mappingText}</td>
+                        <td style="font-size:0.8em">${last}</td>
+                    </tr>`;
+                });
+                lampHtml += `</tbody></table></div>`;
+            }
+
+            div.innerHTML += lampHtml;
+        } catch(e) {
+            div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Lampendiagnose nicht verfügbar: ${escapeHtml(e.message)}</div>`;
         }
     }
 
@@ -452,7 +508,10 @@
             ignore_dynamics: false,
             multi_sync: false,
             sync_cluster: '',
-            sync_offset_ms: 0
+            sync_offset_ms: 0,
+            verify_state: false,
+            split_on: false,
+            repeat_command: false
         });
         await fetch('/api/mapping', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(mappings)});
         nameIn.value=''; loadMappings(); loadTargets();
@@ -767,13 +826,14 @@
 
         d.debug = document.getElementById('sys_debug').checked;
         d.mqttEnabled = document.getElementById('sys_mqttEnabled').checked;
+        d.mqttPassClear = document.getElementById('sys_mqttPassClear')?.checked === true;
         d.disableLogDisk = document.getElementById('sys_disableLogDisk').checked;
 
         try {
             await fetch('/api/setup/loxone', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                 loxoneIp: d.loxIp, loxonePort: d.loxPort, debug: d.debug,
                 transitionTime: d.transitionTime, throttleTime: d.throttleTime, eventStreamWatchdogTimeoutSeconds: d.eventStreamWatchdogTimeoutSeconds,
-                mqttEnabled: d.mqttEnabled, mqttBroker: d.mqttBroker, mqttPort: d.mqttPort, mqttUser: d.mqttUser, mqttPass: d.mqttPass, mqttPrefix: d.mqttPrefix,
+                mqttEnabled: d.mqttEnabled, mqttBroker: d.mqttBroker, mqttPort: d.mqttPort, mqttUser: d.mqttUser, mqttPass: d.mqttPass, mqttPassClear: d.mqttPassClear, mqttPrefix: d.mqttPrefix,
                 disableLogDisk: d.disableLogDisk,
                 multiLightControl: {
                     bridgeMaxCommandsPerSecond: d.multiBridgeMaxCommandsPerSecond,
@@ -892,7 +952,8 @@
                 <tr><td>${infoLabel('Broker IP', 'Adresse des MQTT Brokers, z. B. Mosquitto oder Home Assistant MQTT.')}</td><td><input id="sys_mqttBroker" value="${v(s.mqttBroker)}"></td></tr>
                 <tr><td>${infoLabel('Port', 'MQTT-Port. Standard ist 1883 ohne TLS.')}</td><td><input type="number" id="sys_mqttPort" value="${v(s.mqttPort)||1883}"></td></tr>
                 <tr><td>${infoLabel('User', 'Optionaler MQTT Benutzername.')}</td><td><input id="sys_mqttUser" value="${v(s.mqttUser)}"></td></tr>
-                <tr><td>${infoLabel('Passwort', 'Optionales MQTT Passwort.')}</td><td><input type="password" id="sys_mqttPass" value="${v(s.mqttPass)}"></td></tr>
+                <tr><td>${infoLabel('Passwort', 'Optionales MQTT Passwort. Leer lassen, um ein bereits gesetztes Passwort beizubehalten.')}</td><td><input type="password" id="sys_mqttPass" value="" placeholder="${s.mqttPassSet ? 'Passwort unverändert lassen' : ''}"></td></tr>
+                <tr style="${s.mqttPassSet ? '' : 'display:none'}"><td>${infoLabel('Passwort löschen', 'Entfernt das gespeicherte MQTT Passwort beim Speichern.')}</td><td><label style="display:flex; align-items:center; gap:8px;"><input type="checkbox" id="sys_mqttPassClear"> MQTT Passwort löschen</label></td></tr>
                 <tr><td>${infoLabel('Prefix', 'Topic-Prefix für MQTT Statusmeldungen, z. B. loxhue/light/wohnzimmer/on.')}</td><td><input id="sys_mqttPrefix" value="${v(s.mqttPrefix)||'loxhue'}"></td></tr>
             `;
             renderMultiSyncPreview();
@@ -909,7 +970,10 @@
                 multi_sync: entry.multi_sync === true,
                 multi_sync_group: normalizeMultiSyncGroup(entry.multi_sync_group),
                 sync_cluster: normalizeSyncCluster(entry.sync_cluster),
-                sync_offset_ms: offset
+                sync_offset_ms: offset,
+                verify_state: entry.verify_state === true,
+                split_on: entry.split_on === true,
+                repeat_command: entry.repeat_command === true
             },
             values: {
                 sync_lox: entry.sync_lox === true,
@@ -917,9 +981,19 @@
                 multi_sync: entry.multi_sync === true,
                 multi_sync_group: normalizeMultiSyncGroup(entry.multi_sync_group),
                 sync_cluster: normalizeSyncCluster(entry.sync_cluster),
-                sync_offset_ms: offset
+                sync_offset_ms: offset,
+                verify_state: entry.verify_state === true,
+                split_on: entry.split_on === true,
+                repeat_command: entry.repeat_command === true
             }
         };
+    }
+
+    function getReliabilityMode(values) {
+        if (values.verify_state) return 'verify_state';
+        if (values.split_on) return 'split_on';
+        if (values.repeat_command) return 'repeat_command';
+        return 'none';
     }
 
     function normalizeMultiSyncGroup(value) {
@@ -967,6 +1041,12 @@
         }
         if (key === 'sync_cluster') {
             detailsDraft.values.sync_cluster = normalizeSyncCluster(value);
+            return;
+        }
+        if (key === 'reliability_mode') {
+            detailsDraft.values.verify_state = value === 'verify_state';
+            detailsDraft.values.split_on = value === 'split_on';
+            detailsDraft.values.repeat_command = value === 'repeat_command';
             return;
         }
         detailsDraft.values[key] = value === true;
@@ -1088,6 +1168,19 @@
                     </label>
                     <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">
                         ${isStrictOnOff ? 'Dieses Gerät ist ein reiner On/Off Schalter und unterstützt kein Dimmen. Parameter ist erzwungen aktiv.' : 'Deaktiviert weiche Übergangszeiten (Transition) beim Schalten für dieses Gerät.'}
+                    </div>
+                </div>
+
+                <div class="settings-card" style="display:${entry.hue_type === 'light' ? 'block' : 'none'};">
+                    <div style="font-weight:500; margin-bottom:6px;">Bei unzuverlässiger Übertragung</div>
+                    <select onchange="updateDetailsDraft('reliability_mode', this.value)" style="width:100%; padding:8px;">
+                        <option value="none" ${getReliabilityMode(detailsDraft.values) === 'none' ? 'selected' : ''}>Keine - Befehl einmal senden</option>
+                        <option value="verify_state" ${getReliabilityMode(detailsDraft.values) === 'verify_state' ? 'selected' : ''}>Zustand nachlesen und korrigieren (empfohlen)</option>
+                        <option value="split_on" ${getReliabilityMode(detailsDraft.values) === 'split_on' ? 'selected' : ''}>Einschalten aufteilen</option>
+                        <option value="repeat_command" ${getReliabilityMode(detailsDraft.values) === 'repeat_command' ? 'selected' : ''}>Befehl wiederholen</option>
+                    </select>
+                    <div style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">
+                        Für einzelne Lampen mit Funkproblemen. Nachlesen prüft später on/Helligkeit und sendet nur bei Abweichung erneut. Aufteilen sendet erst on=true und kurz danach Helligkeit/Farbe. Wiederholen sendet denselben Befehl einmal erneut.
                     </div>
                 </div>
                 

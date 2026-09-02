@@ -5,10 +5,21 @@ const Module = require('node:module');
 const originalLoad = Module._load;
 const axiosPutCalls = [];
 const axiosPutResponses = [];
+const axiosGetCalls = [];
+const axiosGetResponses = [];
 Module._load = function mockOptionalDeps(request, parent, isMain) {
     if (request === 'axios') {
         const axiosMock = async () => ({ data: { data: [] } });
-        axiosMock.get = async () => ({ data: { data: [] } });
+        axiosMock.get = async (url, options) => {
+            axiosGetCalls.push({ url, options });
+            if (axiosGetResponses.length) {
+                const response = axiosGetResponses.shift();
+                if (response instanceof Error) throw response;
+                if (typeof response === 'function') return response(url, options);
+                return response;
+            }
+            return { data: { data: [] } };
+        };
         axiosMock.post = async () => ({ data: [] });
         axiosMock.put = async (url, payload, options) => {
             axiosPutCalls.push({ url, payload, options });
@@ -65,7 +76,17 @@ const {
     resetHueSchedulerForTests,
     noteHueSchedulerRateLimit,
     getHueSchedulerPenaltyUntil,
-    putHueWithRateLimitRetry
+    putHueWithRateLimitRetry,
+    updateLightWithQueue,
+    loadHueResources,
+    getHueCommunicationErrors,
+    recordHueCommunicationErrors,
+    getLampDiagnostics,
+    resetLampDiagnosticsForTests,
+    setReliabilityTimingsForTests,
+    recordLampCommand,
+    recordLampEvent,
+    checkStateDeviation
 } = _internals;
 
 function wait(ms) {
@@ -128,6 +149,12 @@ test('xyToHex: Gibt gültigen Hex-Code zurück', () => {
     assert.strictEqual(hex.length, 7);
 });
 
+test('xyToHex: Ungültige Hue XY-Werte ergeben keinen NaN-Hexcode', () => {
+    assert.strictEqual(xyToHex(0, 0, 1.0), '#000000');
+    assert.strictEqual(xyToHex(Number.NaN, 0.2, 1.0), '#000000');
+    assert.doesNotMatch(xyToHex(0.15, 0.06, 1.0), /NaN/);
+});
+
 test('hueLightToLux: Bekannte Werte', () => {
     // Formel: lux = Math.round(10^((v-1)/10000))
     assert.strictEqual(hueLightToLux(1), 1);         // 10^0 = 1 lux (Minimum)
@@ -161,6 +188,21 @@ test('SSE Parser verarbeitet CRLF und mehrzeilige data Felder', () => {
     const parsed = appendEventStreamChunk('', chunk);
     assert.strictEqual(parsed.rawEvents.length, 1);
     assert.strictEqual(extractSseData(parsed.rawEvents[0]), '{"a":1,\n"b":2}');
+});
+
+test('SSE Parser erhält UTF-8-Zeichen über Chunk-Grenzen mit StringDecoder', () => {
+    const { StringDecoder } = require('string_decoder');
+    const decoder = new StringDecoder('utf8');
+    const payload = 'data: [{"type":"update","data":[{"id":"ä","on":{"on":true}}]}]\n\n';
+    const bytes = Buffer.from(payload, 'utf8');
+    const splitAt = bytes.indexOf(0xc3) + 1;
+
+    const first = appendEventStreamChunk('', bytes.subarray(0, splitAt), decoder);
+    assert.deepStrictEqual(first.rawEvents, []);
+
+    const second = appendEventStreamChunk(first.remaining, bytes.subarray(splitAt), decoder);
+    const parsed = JSON.parse(extractSseData(second.rawEvents[0]));
+    assert.strictEqual(parsed[0].data[0].id, 'ä');
 });
 
 test('EventStream Watchdog startet bei kurzer Ruhezeit nicht neu', () => {
@@ -232,6 +274,131 @@ test('Hue PUT Requests werden mit Timeout an axios uebergeben', async () => {
     assert.strictEqual(axiosPutCalls.length, 1);
     assert.strictEqual(axiosPutCalls[0].options.timeout, 4321);
     assert.strictEqual(axiosPutCalls[0].options.headers['hue-application-key'], 'app-key');
+});
+
+test('Hue Ressourcenloader liefert Teilresultate bei einzelnen Fehlern', async () => {
+    axiosGetCalls.length = 0;
+    axiosGetResponses.length = 0;
+    axiosGetResponses.push(
+        { data: { data: [{ id: 'light-1' }] } },
+        new Error('room down')
+    );
+
+    const resources = await loadHueResources(['light', 'room']);
+
+    assert.deepStrictEqual(resources.light, [{ id: 'light-1' }]);
+    assert.strictEqual(resources.room, null);
+    assert.strictEqual(axiosGetCalls.length, 2);
+});
+
+test('Hue communication_error wird trotz data[] als Diagnosefehler gezählt', () => {
+    resetLampDiagnosticsForTests();
+    const response = {
+        data: {
+            data: [{ rid: 'light-1' }],
+            errors: [{ error_code: 'communication_error', description: 'Zigbee communication_error' }]
+        }
+    };
+
+    assert.strictEqual(getHueCommunicationErrors(response).length, 1);
+    assert.strictEqual(recordHueCommunicationErrors('light-1', 'wohn_lampe', response), true);
+
+    const diag = getLampDiagnostics().find(row => row.uuid === 'light-1');
+    assert.strictEqual(diag.communicationErrors, 1);
+    assert.strictEqual(diag.widersprueche, 1);
+    assert.match(diag.letzterFehler, /communication_error/);
+});
+
+test('Lampendiagnose bestätigt erwartete Events mit Helligkeitstoleranz', () => {
+    resetLampDiagnosticsForTests();
+    recordLampCommand('light-1', 'wohn_lampe', { on: { on: true }, dimming: { brightness: 50 } }, 1);
+    recordLampEvent('light-1', { id: 'light-1', on: { on: true }, dimming: { brightness: 50.8 } });
+
+    const diag = getLampDiagnostics().find(row => row.uuid === 'light-1');
+    assert.strictEqual(diag.befehle, 1);
+    assert.strictEqual(diag.bestaetigt, 2);
+    assert.strictEqual(diag.widersprueche, 0);
+});
+
+test('Lampendiagnose erkennt Event-Widerspruch', () => {
+    resetLampDiagnosticsForTests();
+    recordLampCommand('light-1', 'wohn_lampe', { on: { on: true }, dimming: { brightness: 50 } }, 1);
+    recordLampEvent('light-1', { id: 'light-1', on: { on: false }, dimming: { brightness: 20 } });
+
+    const diag = getLampDiagnostics().find(row => row.uuid === 'light-1');
+    assert.strictEqual(diag.widersprueche, 2);
+    assert.match(diag.letzterWiderspruch.gemeldet, /bri=20/);
+});
+
+test('split_on teilt nur Einschaltbefehle mit Zusatzfeldern', async () => {
+    resetHueSchedulerForTests();
+    setReliabilityTimingsForTests({ splitDelayMs: 5, repeatDelayMs: 5, verifyDelaysMs: [5] });
+    axiosPutCalls.length = 0;
+    setFastMultiSyncConfig();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({ bridgeMaxCommandsPerSecond: 100 });
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    configManager.mapping = [
+        { hue_type: 'light', hue_uuid: 'light-1', loxone_name: 'wohn_lampe', split_on: true }
+    ];
+
+    await updateLightWithQueue('light-1', 'light', { on: { on: true }, dimming: { brightness: 55 } }, 'wohn_lampe', 0);
+    await wait(40);
+
+    assert.strictEqual(axiosPutCalls.length, 2);
+    assert.deepStrictEqual(axiosPutCalls[0].payload, { on: { on: true } });
+    assert.strictEqual(axiosPutCalls[1].payload.dimming.brightness, 55);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(axiosPutCalls[1].payload, 'on'), false);
+
+    axiosPutCalls.length = 0;
+    await updateLightWithQueue('light-1', 'light', { on: { on: false } }, 'wohn_lampe', 0);
+    await wait(20);
+    assert.strictEqual(axiosPutCalls.length, 1);
+});
+
+test('repeat_command wird durch neueren Befehl derselben UUID abgebrochen', async () => {
+    resetHueSchedulerForTests();
+    setReliabilityTimingsForTests({ repeatDelayMs: 20, splitDelayMs: 5, verifyDelaysMs: [5] });
+    axiosPutCalls.length = 0;
+    setFastMultiSyncConfig();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({ bridgeMaxCommandsPerSecond: 100 });
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    configManager.mapping = [
+        { hue_type: 'light', hue_uuid: 'light-1', loxone_name: 'wohn_lampe', repeat_command: true }
+    ];
+
+    await updateLightWithQueue('light-1', 'light', { on: { on: true }, dimming: { brightness: 20 } }, 'wohn_lampe', 0);
+    await wait(5);
+    await updateLightWithQueue('light-1', 'light', { on: { on: true }, dimming: { brightness: 30 } }, 'wohn_lampe', 0);
+    await wait(70);
+
+    const repeatedFirst = axiosPutCalls.slice(1).some(call => call.payload.dimming?.brightness === 20);
+    assert.strictEqual(repeatedFirst, false);
+    assert.ok(axiosPutCalls.some(call => call.payload.dimming?.brightness === 30));
+});
+
+test('verify_state erkennt Abweichung und steuert nach', async () => {
+    resetHueSchedulerForTests();
+    setReliabilityTimingsForTests({ verifyDelaysMs: [5], repeatDelayMs: 5, splitDelayMs: 5 });
+    axiosPutCalls.length = 0;
+    axiosGetResponses.length = 0;
+    setFastMultiSyncConfig();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({ bridgeMaxCommandsPerSecond: 100 });
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    configManager.mapping = [
+        { hue_type: 'light', hue_uuid: 'light-1', loxone_name: 'wohn_lampe', verify_state: true }
+    ];
+    axiosGetResponses.push({ data: { data: [{ id: 'light-1', on: { on: false }, dimming: { brightness: 1 } }] } });
+
+    await updateLightWithQueue('light-1', 'light', { on: { on: true }, dimming: { brightness: 80 } }, 'wohn_lampe', 0);
+    await wait(80);
+
+    assert.ok(axiosPutCalls.length >= 2);
+    assert.strictEqual(axiosPutCalls[0].payload.dimming.brightness, 80);
+    assert.strictEqual(axiosPutCalls[1].payload.dimming.brightness, 80);
+
+    const diag = getLampDiagnostics().find(row => row.uuid === 'light-1');
+    assert.strictEqual(diag.verifiziert, 1);
+    assert.strictEqual(diag.nachgesteuert, 1);
 });
 
 test('Runtime-Konfiguration setzt Light Queue Delay aus throttleTime', () => {

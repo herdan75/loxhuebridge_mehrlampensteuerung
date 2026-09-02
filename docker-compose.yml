@@ -15,6 +15,7 @@ services:
 
     environment:
       - TZ=Europe/Vienna
+      - DATA_DIR=/app/data
 
     volumes:
       # Enthält config.json, mapping.json und logs.db

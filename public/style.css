@@ -403,6 +403,13 @@ input:checked + .slider:before { transform: translateX(18px); }
 .details-table td { padding: 8px 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
 .details-table td:first-child { font-weight: bold; color: var(--text-muted); width: 40%; }
 
+.diag-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.diag-table { min-width: 980px; }
+.diag-table th,
+.diag-table td { white-space: nowrap; }
+.diag-table td:first-child,
+.diag-table th:first-child { white-space: normal; min-width: 210px; }
+
 .status-ok { color: #4caf50; font-weight: bold; }
 .status-err { color: #f44336; font-weight: bold; }
 .mac-addr { font-family: monospace; color: #888; font-size: 0.8em; }

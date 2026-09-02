@@ -6,12 +6,11 @@ Dieser Fork erweitert loxHueBridge um eine **gruppierte Mehrlampensynchronisieru
 
 Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung und nutzt die moderne Hue Event-Schnittstelle (SSE), um Statusänderungen in Echtzeit an Loxone (UDP) und MQTT Broker zurückzumelden.
 
-> Originalprojekt: https://github.com/bausi2k/loxhuebridge  
 > Fork: https://github.com/herdan75/loxhuebridge_mehrlampensteuerung
 
 ---
 
-## 🚀 Features V2.5.9-dev Mehrlampensteuerung
+## 🚀 Features V2.5.10-dev Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
@@ -39,6 +38,12 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
     * `Unexpected end of JSON input`
     * `Unterminated string in JSON`
     * `Expected double-quoted property name in JSON`
+* **UTF-8-sicherer EventStream:** Der SSE-Puffer nutzt einen UTF-8 `StringDecoder`, damit Umlaute und andere Mehrbyte-Zeichen an TCP-Chunk-Grenzen nicht beschädigt werden.
+* **Zuverlässigkeitsdiagnose pro Lampe:** Der Diagnose-Tab zählt Befehle, Bestätigungen, Widersprüche, Nachsteuerungen und Hue `communication_error`-Meldungen pro einzelner Lampe.
+* **Optionale Funkmaßnahmen pro Lampe:** Für problematische Zigbee-/Fremdhersteller-Lampen können gezielt `Zustand nachlesen`, `Einschalten aufteilen` oder `Befehl wiederholen` aktiviert werden.
+* **Robustere Hue-Ressourcenladung:** Geräteliste und Initial-Sync bleiben teilweise nutzbar, wenn ein einzelner Hue-Endpunkt temporär fehlschlägt.
+* **Sauberer Container-Shutdown:** HTTP-Server, Hue EventStream, MQTT, UDP-Socket und Logger werden beim Stoppen kontrolliert geschlossen.
+* **Logrotation:** Die SQLite-Logs werden begrenzt und per WAL-Checkpoint sauber gehalten.
 * **Globale Multi-Sync Feineinstellungen:** Sammelfenster, Batchgröße und Batch-Pause sind konfigurierbar.
 
 ### Bestehende Features
@@ -114,6 +119,21 @@ Diese Variante baut das Image direkt aus deinem lokalen Fork-Verzeichnis. Damit 
 
 Der Ordner `data` enthält deine Konfiguration (`config.json`), Mappings (`mapping.json`) und die Log-Datenbank (`logs.db`).
 
+### Datenordner / `DATA_DIR`
+
+Standardmäßig nutzt die Bridge den Ordner `data` direkt im Projektverzeichnis. Der Datenordner hängt nicht vom aktuellen Startverzeichnis ab; dadurch gehen Konfiguration und Mappings nicht scheinbar verloren, wenn der Prozess aus einem anderen Pfad gestartet wird.
+
+Optional kann ein fester Datenpfad gesetzt werden:
+
+```yaml
+environment:
+  - DATA_DIR=/app/data
+volumes:
+  - ./data:/app/data
+```
+
+Für Docker/Portainer ist die im Beispiel gezeigte Volume-Zuordnung empfohlen, damit Konfiguration und Mappings bei Container-Neubau erhalten bleiben.
+
 ---
 
 ## Main oder Develop?
@@ -149,7 +169,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.9-dev
+Version: 2.5.10-dev
 ```
 
 ### Zurück auf main
@@ -178,6 +198,7 @@ services:
     network_mode: "host"
     environment:
       - TZ=Europe/Vienna
+      - DATA_DIR=/app/data
     volumes:
       - ./data:/app/data
 ```
@@ -280,6 +301,7 @@ Sync-Offset      = Feintuning pro einzelner Lampe
 | --- | --- |
 | Loxone Sync | Statusänderungen dieser Lampe werden per UDP an Loxone zurückgemeldet |
 | Dynamics ignorieren | Sendet Hue-Befehle ohne `dynamics.duration`. Das ist sinnvoll für reine Schaltaktoren oder wenn ein Gerät mit Hue Dynamics Probleme macht |
+| Bei unzuverlässiger Übertragung | Optionale Funkmaßnahme pro einzelner Lampe. Standard ist `Keine` |
 | Mehrlampensynchronisierung | Diese einzelne Lampe nimmt am gemeinsamen Sammel-/Timing-Ablauf teil |
 | Gruppe | Zuordnung zu Gruppe A-E. Die Gruppennamen können in den globalen Einstellungen frei benannt werden, z. B. Wohnzimmer, Büro oder Küche |
 | Ablauf-Cluster | Lampen mit gleichem Cluster innerhalb derselben Gruppe werden enger nacheinander geplant. Wenn leer, läuft die Lampe als Einzel-Cluster |
@@ -291,6 +313,19 @@ Den Sync-Offset erst nach einem Testlauf anpassen:
 Lampe reagiert später  → Offset z. B. -30 ms oder -50 ms
 Lampe reagiert früher  → Offset z. B. +30 ms oder +50 ms
 ```
+
+### Funkmaßnahmen pro Lampe
+
+Die Funkmaßnahmen sind nur für einzelne Hue-Lampen gedacht, die sich im Zigbee-Netz unzuverlässig verhalten, z. B. einzelne Fremdhersteller-Leuchtmittel oder LED-Controller. Normalerweise bleibt die Einstellung auf **Keine - Befehl einmal senden**.
+
+| Option | Wirkung | Einsatz |
+| --- | --- | --- |
+| Keine | Der Befehl wird normal einmal gesendet | Standard für zuverlässig reagierende Hue-Lampen |
+| Zustand nachlesen und korrigieren | Prüft nach dem Schalten später `on` und Helligkeit und sendet denselben Payload nur bei Abweichung erneut | Beste Wahl, wenn Lampen manchmal auf falscher Helligkeit bleiben oder nicht sauber übernehmen |
+| Einschalten aufteilen | Sendet bei `on=true` mit Zusatzwerten zuerst nur `on=true`, danach Helligkeit/Farbe/Farbtemperatur | Test für Lampen, die beim Einschalten kurz auf 0 % oder alter Helligkeit hängen |
+| Befehl wiederholen | Sendet denselben Befehl nach kurzer Verzögerung einmal erneut | Test für einzelne Funk-Aussetzer; nicht global aktivieren |
+
+Die drei Optionen schließen sich gegenseitig aus. Alte Nachprüfungen oder Wiederholungen werden verworfen, sobald ein neuerer Befehl für dieselbe Hue-UUID kommt. Dadurch soll eine späte Korrektur nicht versehentlich einen inzwischen gewünschten neuen Zustand überschreiben.
 
 ### Gruppen und globale Multi-Sync Einstellungen
 
@@ -400,12 +435,29 @@ Bei Problemen: zurück auf 20/s oder 15/s
 
 Typische Zeichen für ein zu hohes Limit sind 429-Fehler im Log, einzelne Lampen reagieren spürbar später, Farben werden nicht sauber übernommen oder der EventStream meldet auffällig viele Folgeupdates. In diesem Fall `Max. Lichtbefehle/s` reduzieren oder die Batch-Pause erhöhen.
 
+### Diagnose pro Lampe
+
+Der Tab **Diagnose** enthält zusätzlich eine Zuverlässigkeitstabelle für Lampenbefehle seit dem letzten Neustart.
+
+| Wert | Bedeutung |
+| --- | --- |
+| Befehle | Anzahl der von loxHueBridge gesendeten logischen Lampenbefehle |
+| Bestätigt | EventStream-Rückmeldungen, die zu `on` oder Helligkeit passen |
+| Widersprüche | EventStream-Rückmeldungen oder Hue `communication_error`, die nicht zum erwarteten Zustand passen |
+| Verifiziert | Aktive Nachprüfungen durch `Zustand nachlesen und korrigieren` |
+| Nachgesteuert | Anzahl der erneut gesendeten Payloads nach bestätigter Abweichung |
+| Mapping | Loxone-/Hue-Zuordnung mit Device, Multi-Sync-Gruppe und Ablauf-Cluster |
+
+Diese Diagnose ersetzt keine echte Zigbee-Funkmessung, macht aber sichtbar, welche einzelne Lampe bei Szenen oder schnellen Farbwechseln auffällig reagiert.
+
 ---
 
 ## 📡 MQTT Integration
 
 Die Bridge kann Statuswerte parallel an einen MQTT Broker senden.
 Die Konfiguration erfolgt im Web-Interface unter dem Tab **System**.
+
+Ein leeres MQTT-Passwortfeld beim Speichern bedeutet: vorhandenes Passwort beibehalten. Ein gespeichertes Passwort wird nur über die separate Option **MQTT Passwort löschen** entfernt.
 
 **Topic Struktur:**
 
@@ -501,8 +553,10 @@ Syntaxprüfung lokal oder im Container:
 ```bash
 node --check lib/hue.js
 node --check lib/config.js
+node --check lib/logger.js
 node --check lib/routes.js
 node --check public/app.js
+node --check server.js
 npm test
 ```
 
@@ -516,12 +570,8 @@ Bei erfolgreichem SSE-Fix sollten die bisherigen EventStream-JSON-Fehler nicht m
 
 ---
 
-## 🤝 Credits
+## 🤝 Hinweise
 
 **#kiassisted** 🤖
 
-Dieses Projekt basiert auf dem Originalprojekt von **bausi2k** und wurde in diesem Fork um Mehrlampensynchronisierung und robustes SSE-Parsing erweitert.
-
-Originalprojekt: https://github.com/bausi2k/loxhuebridge
-
-<a href="https://www.buymeacoffee.com/bausi2k" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+Dieser Entwicklungsstand beschreibt die hier gepflegte Version mit Mehrlampensynchronisierung, Hue Effekt-Fallback, robuster SSE/EventStream-Verarbeitung und erweiterten Diagnosefunktionen.

@@ -3,6 +3,8 @@ const assert = require('node:assert');
 const Module = require('node:module');
 
 const originalLoad = Module._load;
+const axiosGetCalls = [];
+const axiosGetResponses = [];
 Module._load = function mockOptionalDeps(request, parent, isMain) {
     if (request === 'express') {
         return {
@@ -22,7 +24,16 @@ Module._load = function mockOptionalDeps(request, parent, isMain) {
     }
     if (request === 'axios') {
         const axiosMock = async () => ({ data: { data: [] } });
-        axiosMock.get = async () => ({ data: { data: [] } });
+        axiosMock.get = async (url) => {
+            axiosGetCalls.push(url);
+            if (axiosGetResponses.length) {
+                const response = axiosGetResponses.shift();
+                if (response instanceof Error) throw response;
+                if (typeof response === 'function') return response(url);
+                return response;
+            }
+            return { data: { data: [] } };
+        };
         axiosMock.post = async () => ({ data: [] });
         axiosMock.put = async () => ({ data: [] });
         return axiosMock;
@@ -234,7 +245,98 @@ test('Routes - Mapping Settings speichert Sync-Offset und erlaubte Felder', () =
     assert.strictEqual(configManager.mapping[0].multi_sync, true);
     assert.strictEqual(configManager.mapping[0].sync_lox, false);
     assert.strictEqual(configManager.mapping[0].ignore_dynamics, true);
+    assert.strictEqual(configManager.mapping[0].verify_state, false);
+    assert.strictEqual(configManager.mapping[0].split_on, false);
+    assert.strictEqual(configManager.mapping[0].repeat_command, false);
     assert.strictEqual(configManager.mapping[0].hue_uuid, 'uuid-top');
+});
+
+test('Routes - Mapping Settings speichert genau eine Funkmaßnahme', () => {
+    configManager.mapping = [
+        {
+            loxone_name: 'wohn_lampe',
+            hue_uuid: 'uuid-wohn',
+            hue_name: 'Hue Wohn',
+            hue_type: 'light',
+            sync_offset_ms: 0
+        }
+    ];
+
+    const handler = getRouteHandler('/api/mapping/:loxoneName/settings');
+    let payload = null;
+    const res = {
+        json(content) {
+            payload = content;
+            return this;
+        },
+        status() {
+            return this;
+        }
+    };
+
+    handler({
+        params: { loxoneName: 'wohn_lampe' },
+        body: {
+            sync_lox: true,
+            ignore_dynamics: false,
+            multi_sync: true,
+            multi_sync_group: 'a',
+            sync_cluster: '',
+            sync_offset_ms: 0,
+            verify_state: true,
+            split_on: false,
+            repeat_command: false
+        }
+    }, res);
+
+    assert.strictEqual(payload.success, true);
+    assert.strictEqual(configManager.mapping[0].verify_state, true);
+    assert.strictEqual(configManager.mapping[0].split_on, false);
+    assert.strictEqual(configManager.mapping[0].repeat_command, false);
+});
+
+test('Routes - Mapping Settings lehnt mehrere Funkmaßnahmen gleichzeitig ab', () => {
+    configManager.mapping = [
+        {
+            loxone_name: 'wohn_lampe',
+            hue_uuid: 'uuid-wohn',
+            hue_name: 'Hue Wohn',
+            hue_type: 'light',
+            sync_offset_ms: 0
+        }
+    ];
+
+    const handler = getRouteHandler('/api/mapping/:loxoneName/settings');
+    let statusCode = null;
+    let payload = null;
+    const res = {
+        status(code) {
+            statusCode = code;
+            return this;
+        },
+        json(content) {
+            payload = content;
+            return this;
+        }
+    };
+
+    handler({
+        params: { loxoneName: 'wohn_lampe' },
+        body: {
+            sync_lox: true,
+            ignore_dynamics: false,
+            multi_sync: true,
+            multi_sync_group: 'a',
+            sync_cluster: '',
+            sync_offset_ms: 0,
+            verify_state: true,
+            split_on: true,
+            repeat_command: false
+        }
+    }, res);
+
+    assert.strictEqual(statusCode, 400);
+    assert.strictEqual(payload.success, false);
 });
 
 test('Routes - Mapping Settings validiert und begrenzt Sync-Offset', () => {
@@ -247,6 +349,96 @@ test('Routes - Mapping Settings validiert und begrenzt Sync-Offset', () => {
     assert.strictEqual(routes._internals.parseSyncClusterSetting(' TV '), 'TV');
     assert.strictEqual(routes._internals.parseSyncClusterSetting(null), '');
     assert.strictEqual(routes._internals.parseSyncClusterSetting('123456789012345678901234567890123456789012345'), '1234567890123456789012345678901234567890');
+});
+
+test('Routes - leeres MQTT Passwort bleibt beim Speichern unverändert', () => {
+    const hueManager = require('../lib/hue');
+    const originalSaveConfig = configManager.saveConfig;
+    const originalLoad = configManager.load;
+    const originalStartEventStream = hueManager.startEventStream;
+    configManager.saveConfig = () => {};
+    configManager.load = () => {};
+    hueManager.startEventStream = () => {};
+
+    configManager.config.mqttPass = 'bestehend';
+
+    const handler = getRouteHandler('/api/setup/loxone');
+    let payload = null;
+    const res = { json: content => { payload = content; } };
+
+    handler({
+        body: {
+            loxoneIp: '192.168.1.2',
+            loxonePort: 7000,
+            mqttPass: '',
+            multiLightControl: configManager.getDefaultMultiLightControl()
+        }
+    }, res);
+
+    assert.strictEqual(payload.success, true);
+    assert.strictEqual(configManager.config.mqttPass, 'bestehend');
+
+    handler({
+        body: {
+            loxoneIp: '192.168.1.2',
+            loxonePort: 7000,
+            mqttPass: 'neu',
+            multiLightControl: configManager.getDefaultMultiLightControl()
+        }
+    }, res);
+    assert.strictEqual(configManager.config.mqttPass, 'neu');
+
+    handler({
+        body: {
+            loxoneIp: '192.168.1.2',
+            loxonePort: 7000,
+            mqttPassClear: true,
+            multiLightControl: configManager.getDefaultMultiLightControl()
+        }
+    }, res);
+    assert.strictEqual(configManager.config.mqttPass, '');
+
+    configManager.saveConfig = originalSaveConfig;
+    configManager.load = originalLoad;
+    hueManager.startEventStream = originalStartEventStream;
+});
+
+test('Routes - /api/targets liefert Teilresultate bei Hue-Ressourcenfehlern', async () => {
+    axiosGetCalls.length = 0;
+    axiosGetResponses.length = 0;
+    configManager.isConfigured = true;
+    configManager.config.bridgeIp = 'bridge';
+    configManager.config.appKey = 'key';
+
+    axiosGetResponses.push(
+        { data: { data: [] } },
+        { data: { data: [] } },
+        { data: { data: [{ id: 'light-1', metadata: { name: 'Lampe 1' } }] } },
+        new Error('room down'),
+        { data: { data: [{ metadata: { name: 'Zone 1' }, services: [{ rtype: 'grouped_light', rid: 'grouped-1' }] }] } },
+        { data: { data: [{ id: 'device-1', metadata: { name: 'Sensor 1' }, services: [{ rtype: 'motion', rid: 'motion-1' }] }] } }
+    );
+
+    const handler = getRouteHandler('/api/targets');
+    let payload = null;
+    let statusCode = 200;
+    const res = {
+        status(code) {
+            statusCode = code;
+            return this;
+        },
+        json(content) {
+            payload = content;
+            return this;
+        }
+    };
+
+    await handler({}, res);
+
+    assert.strictEqual(statusCode, 200);
+    assert.ok(payload.find(item => item.uuid === 'light-1' && item.type === 'light'));
+    assert.ok(payload.find(item => item.uuid === 'grouped-1' && item.type === 'group'));
+    assert.ok(payload.find(item => item.uuid === 'motion-1' && item.type === 'sensor'));
 });
 
 test('Routes - Mapping Settings lehnt ungültige Felder ab', () => {

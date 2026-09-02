@@ -1,3 +1,14 @@
+## [2.5.10-dev] - In Entwicklung
+### Verbesserungen
+- **Stabilitäts- und Diagnosefunktionen ergänzt:** DATA_DIR-Fix, Logrotation, sauberer Shutdown, robuste Hue-Ressourcenladung und optionale Funkmaßnahmen pro Lampe.
+- **Zuverlässigkeitsdiagnose pro Lampe:** Befehle, Bestätigungen, Widersprüche, Verifikationen, Nachsteuerungen und Hue `communication_error` werden pro Light-UUID sichtbar.
+- **Funkmaßnahmen pro Lampe:** `Zustand nachlesen und korrigieren`, `Einschalten aufteilen` und `Befehl wiederholen` sind im Geräte-Detailfenster auswählbar und schließen sich gegenseitig aus.
+- **MQTT-Passwort sicherer speichern:** Ein leeres Passwortfeld beim Speichern behält das bestehende Passwort bei; Löschen ist nur explizit möglich.
+- **SSE-Parser UTF-8-sicher:** Der vorhandene Event-Puffer nutzt nun `StringDecoder`, damit Mehrbyte-Zeichen an Chunk-Grenzen korrekt bleiben.
+
+### Tests
+- Tests für DATA_DIR, Logger-Pruning, Shutdown-Vertrag, allSettled-Ressourcenladung, MQTT-Passwort-Erhalt, Funkmaßnahmen, Hue `communication_error`, Lampendiagnose, SSE-UTF-8 und UI-Erhalt der Multi-Sync-Felder ergänzt.
+
 ## [2.5.9-dev] - In Entwicklung
 ### Verbesserungen
 - **Manuelle Ablauf-Cluster für Multi-Sync:** Lampen innerhalb einer Multi-Sync-Gruppe können zusätzlich einem Ablauf-Cluster wie Deckenlampe, Stehlampe, TV oder Buddha zugeordnet werden.
@@ -130,7 +141,7 @@
 
 ### 🔄 Verbesserungen
 - **Gezielter Queue-Bypass:** Die bestehende Queue bleibt für normale Lampen erhalten. Nur Lampen mit aktivierter Mehrlampensynchronisierung nutzen den neuen Batch-Ablauf.
-- **Fork-Docker-Setup:** `docker-compose.yml` baut das lokale Image aus dem Fork, damit beim Testen nicht versehentlich das Original-Image von `ghcr.io/bausi2k/loxhuebridge` verwendet wird.
+- **Fork-Docker-Setup:** `docker-compose.yml` baut das lokale Image aus diesem Repository, damit beim Testen kein externes Standard-Image verwendet wird.
 
 ## [2.3.0] - 2026-05-04
 ### 🌟 New Features

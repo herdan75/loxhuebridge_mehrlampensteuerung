@@ -46,6 +46,35 @@ test('Logger - SQLite Modus', (t) => {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
 });
 
+test('Logger - pruneLogs kappt SQLite und close schließt die DB', (t) => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'loxhue-prune-test-'));
+    const oldMaxDbLogs = logger.MAX_DB_LOGS;
+    const oldPruneIntervalWrites = logger.PRUNE_INTERVAL_WRITES;
+    t.after(() => {
+        logger.MAX_DB_LOGS = oldMaxDbLogs;
+        logger.PRUNE_INTERVAL_WRITES = oldPruneIntervalWrites;
+        logger.closeDb();
+    });
+
+    logger.init(tempDir, false, false);
+    logger.MAX_DB_LOGS = 3;
+    logger.PRUNE_INTERVAL_WRITES = 1000;
+
+    for (let i = 0; i < 5; i++) logger.info(`Prune Entry ${i}`);
+
+    const deleted = logger.pruneLogs();
+    const logs = logger.getLogs(10);
+    const indexes = logger.getRawDb().prepare("SELECT name FROM sqlite_master WHERE type='index' AND name IN ('idx_logs_category', 'idx_logs_timestamp')").all();
+
+    assert.ok(deleted >= 2);
+    assert.strictEqual(logs.length, 3);
+    assert.deepStrictEqual(indexes.map(row => row.name).sort(), ['idx_logs_category', 'idx_logs_timestamp']);
+
+    logger.close();
+    assert.strictEqual(logger.getRawDb(), null);
+    assert.strictEqual(logger.disableLogDisk, true);
+});
+
 test('Logger - updateConfig wechselt von Disk auf RAM ohne offene DB', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'loxhue-switch-test-'));
     logger.init(tempDir, false, true);

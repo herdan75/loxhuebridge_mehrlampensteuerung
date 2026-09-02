@@ -7,6 +7,7 @@ const logger = require('./lib/logger');
 const configManager = require('./lib/config');
 const mqttManager = require('./lib/mqtt');
 const hueManager = require('./lib/hue');
+const loxoneManager = require('./lib/loxone');
 const routes = require('./lib/routes');
 const auth = require('./lib/auth');
 
@@ -21,7 +22,18 @@ process.on('uncaughtException', (err) => {
             stmt.run(Date.now(), 'ERROR', 'SYSTEM', `CRASH: ${err.message}`);
         }
     } catch(e) { console.error("Fehler beim Schreiben des Crash-Logs", e); }
+    try { logger.close(); } catch(e) { console.error("Fehler beim Schließen des Loggers", e); }
     process.exit(1); 
+});
+
+process.on('unhandledRejection', (reason) => {
+    const text = reason instanceof Error ? reason.stack || reason.message : String(reason);
+    console.error('🔥 [FATAL] UNHANDLED REJECTION:', text);
+    try {
+        logger.error(`CRASH: ${reason instanceof Error ? reason.message : String(reason)}`, 'SYSTEM');
+        logger.close();
+    } catch(e) { console.error("Fehler beim Schreiben des Crash-Logs", e); }
+    process.exit(1);
 });
 
 configManager.load();
@@ -53,7 +65,40 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/', routes);
 
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || "8555");
-app.listen(HTTP_PORT, () => { 
+const httpServer = app.listen(HTTP_PORT, () => {
     console.log(`🚀 loxHueBridge Live auf ${HTTP_PORT}`); 
     if (configManager.isConfigured) hueManager.startEventStream(); 
 });
+
+const SHUTDOWN_TIMEOUT_MS = 8000;
+let shutdownStarted = false;
+
+function shutdown(signal) {
+    if (shutdownStarted) return;
+    shutdownStarted = true;
+    logger.info(`${signal} empfangen, fahre herunter...`, 'SYSTEM');
+
+    const closeLoggerAndExit = (code) => {
+        try { logger.close(); } catch (e) { console.error('[SHUTDOWN] Logger:', e.message); }
+        process.exit(code);
+    };
+
+    const hardExitTimer = setTimeout(() => {
+        console.error('[SHUTDOWN] Timeout abgelaufen, beende hart.');
+        closeLoggerAndExit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    hardExitTimer.unref?.();
+
+    try { hueManager.stopEventStream?.(); } catch (e) { console.error('[SHUTDOWN] EventStream:', e.message); }
+    try { mqttManager.close?.(); } catch (e) { console.error('[SHUTDOWN] MQTT:', e.message); }
+    try { loxoneManager.close?.(); } catch (e) { console.error('[SHUTDOWN] UDP:', e.message); }
+
+    httpServer.close((error) => {
+        if (error) console.error('[SHUTDOWN] HTTP:', error.message);
+        clearTimeout(hardExitTimer);
+        closeLoggerAndExit(0);
+    });
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

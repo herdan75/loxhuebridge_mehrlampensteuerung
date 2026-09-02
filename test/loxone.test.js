@@ -33,5 +33,12 @@ test('LoxoneManager - sendToLoxone ruft udpClient auf', (t) => {
     loxoneManager.udpClient.send = originalSend; 
     
     // Close the socket to allow the process to exit cleanly after tests
-    loxoneManager.udpClient.close();
+    loxoneManager.close();
+});
+
+test('LoxoneManager - close kann mehrfach aufgerufen werden', () => {
+    loxoneManager.createSocket();
+    loxoneManager.close();
+    loxoneManager.close();
+    assert.strictEqual(loxoneManager.udpClient, null);
 });

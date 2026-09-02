@@ -44,6 +44,30 @@ test('Frontend validiert Hex-Farben vor style background-color', () => {
     assert.match(appJs, /background-color:\$\{safeHex\}/);
 });
 
+test('Frontend enthält Funkmaßnahme-Auswahl ohne Multi-Sync-Felder zu entfernen', () => {
+    assert.match(appJs, /Bei unzuverlässiger Übertragung/);
+    assert.match(appJs, /Zustand nachlesen und korrigieren/);
+    assert.match(appJs, /Einschalten aufteilen/);
+    assert.match(appJs, /Befehl wiederholen/);
+    assert.match(appJs, /updateDetailsDraft\('reliability_mode'/);
+    assert.match(appJs, /verify_state/);
+    assert.match(appJs, /split_on/);
+    assert.match(appJs, /repeat_command/);
+    assert.match(appJs, /multi_sync_group/);
+    assert.match(appJs, /sync_cluster/);
+    assert.match(appJs, /sync_offset_ms/);
+});
+
+test('Frontend behandelt MQTT Passwort als optionales Secret und Diagnose mobil scrollbar', () => {
+    const styleCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'style.css'), 'utf8');
+
+    assert.match(appJs, /mqttPassClear/);
+    assert.match(appJs, /Passwort unverändert lassen/);
+    assert.doesNotMatch(appJs, /id="sys_mqttPass" value="\$\{v\(s\.mqttPass\)\}"/);
+    assert.match(appJs, /\/api\/diagnostics\/lampen/);
+    assert.match(styleCss, /\.diag-scroll\s*\{[^}]*overflow-x:\s*auto/);
+});
+
 test('Frontend und Dokumentation enthalten keine typischen Mojibake-Sequenzen', () => {
     const mojibakePatterns = [
         ['Ãƒ', /\u00c3\u0192/u],
