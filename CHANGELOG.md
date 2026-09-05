@@ -1,3 +1,27 @@
+## [2.5.11-dev] - In Entwicklung
+### Korrekturen
+- Globale Bridge-Rate für jeden tatsächlichen PUT durchgesetzt, auch innerhalb von Clustern, für Effekte und Retries.
+- Letzter ausdrücklich gewünschter Schaltzustand gewinnt im Sammelfenster; gültige RGB-Werte mit Präfix 20 werden nicht mehr als Farbtemperatur verworfen.
+- Veraltete Queue-Befehle, Wiederholungen und Effekt-Timer werden pro Ziel vor dem Senden verworfen. Unabhängige Effekte unterbrechen sich nicht mehr.
+- Alte Nachsteuerungen werden bei Gruppenbefehlen unterbunden und nach vollständiger Zustandsbestätigung beendet.
+- Hue-Fachfehler gelten nicht als Erfolg. Angeforderte Zustände werden nicht mehr als Istwerte an Dashboard, UDP oder MQTT zurückgemeldet.
+- Rate-Pause ab Request-Start statt Antwortende berechnet; gemeinsame Timing-Planung für Backend und UI mit globaler Mindestpause.
+- Config und Mapping atomar gespeichert; gemeinsamer Restore mit Wiederherstellungsjournal. Fehler bleiben auch im Webinterface sichtbar.
+- Passwortprüfung asynchron, mit begrenzter Parallelität, kurzlebigem Credential-Cache und Anmeldebegrenzung.
+- EventStream-Aufbau abbrechbar und zeitlich begrenzt; verspätete Verbindungen werden geschlossen.
+
+### Sicherheit und Betrieb
+- Abhängigkeiten aktualisiert; gepatchte qs-Version für die Express-Abhängigkeiten festgelegt. Hue-Requests folgen keinen Weiterleitungen.
+- Docker kopiert nur Anwendungscode. Laufzeitdaten, Backups und Prüfartefakte vom Build ausgeschlossen; Logdatenbank aus Git-Verfolgung entfernt. Einmalige Datensicherung vor dem Update dokumentiert.
+- API-Neustart und Restore verwenden den kontrollierten Shutdown; nach Shutdown werden keine neuen Hue-PUTs begonnen.
+- Einstellungsformular und Timing-Vorschau passen auch auf schmale Mobilbildschirme.
+- Version als Entwicklungsstand gekennzeichnet; Entwicklungs-Tags überschreiben kein stabiles latest-Image.
+
+### Prüfungen
+- Regressionstests für die korrigierten Fehler, temporäre Git-Datenmigration sowie echte lokale HTTP-/Auth-/SSE- und Shutdown-Tests ergänzt.
+- npm test auf automatisierte Tests begrenzt; manuelle Netzwerkdiagnose separat und nur mit expliziter Zieladresse ausführbar.
+- Tests und Dependency-Audit vor dem Docker-Release sowie CI-Prüfungen auf Windows und Linux eingerichtet.
+
 ## [2.5.10-dev] - In Entwicklung
 ### Verbesserungen
 - **Stabilitäts- und Diagnosefunktionen ergänzt:** DATA_DIR-Fix, Logrotation, sauberer Shutdown, robuste Hue-Ressourcenladung und optionale Funkmaßnahmen pro Lampe.

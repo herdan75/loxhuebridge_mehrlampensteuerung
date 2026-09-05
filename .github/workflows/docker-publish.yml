@@ -20,6 +20,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install and test
+        run: |
+          npm ci
+          npm test
+          npm audit --omit=dev --audit-level=moderate
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -41,7 +53,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startswith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -80,6 +92,6 @@ jobs:
         with:
           body_path: release_body.md
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

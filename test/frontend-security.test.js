@@ -35,7 +35,7 @@ test('Sync-Offset wird nicht mehr per parseInt onchange direkt gespeichert', () 
     assert.doesNotMatch(appJs, /parseInt\(this\.value\)\s*\|\|\s*0/);
     assert.doesNotMatch(appJs, /updateMappingSetting\([^)]*sync_offset_ms/);
     assert.match(appJs, /function normalizeSyncOffset/);
-    assert.match(appJs, /fetch\(`\/api\/mapping\/\$\{encodeURIComponent\(detailsDraft\.loxoneName\)\}\/settings`/);
+    assert.match(appJs, /apiRequest\(`\/api\/mapping\/\$\{encodeURIComponent\(detailsDraft\.loxoneName\)\}\/settings`/);
 });
 
 test('Frontend validiert Hex-Farben vor style background-color', () => {

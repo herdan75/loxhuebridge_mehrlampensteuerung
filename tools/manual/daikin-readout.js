@@ -1,5 +1,6 @@
-// test-temp.js
-const DAIKIN_IP = "192.168.1.21"; // ⚠️ Hier die IP deiner Daikin eintragen!
+// Manuelle Diagnose, nicht Teil der automatisierten Hue-Tests.
+const DAIKIN_IP = process.env.DAIKIN_IP;
+if (!DAIKIN_IP) throw new Error('DAIKIN_IP muss explizit gesetzt werden.');
 
 async function fetchRawDaikinData() {
     const endpoints = [
@@ -13,7 +14,7 @@ async function fetchRawDaikinData() {
     for (const endpoint of endpoints) {
         try {
             console.log(`--- Prüfe Endpunkt: ${endpoint} ---`);
-            const res = await fetch(`http://${DAIKIN_IP}${endpoint}`);
+            const res = await fetch(`http://${DAIKIN_IP}${endpoint}`, { signal: AbortSignal.timeout(5000) });
 
             if (!res.ok) {
                 console.log(`❌ Fehler: HTTP ${res.status}`);

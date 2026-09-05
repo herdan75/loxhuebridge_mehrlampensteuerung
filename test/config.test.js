@@ -71,6 +71,46 @@ test('ConfigManager - Load and Save Config', (t) => {
     assert.strictEqual(configManager.isConfigured, true);
 });
 
+test('F06: Fehlgeschlagenes Speichern erhaelt Datei und Laufzeitkonfiguration', () => {
+    const previous = { ...configManager.config };
+    const originalRename = fs.renameSync;
+    const before = fs.readFileSync(configManager.configFile, 'utf8');
+    fs.renameSync = () => { throw new Error('simulated disk failure'); };
+    try {
+        assert.throws(() => configManager.saveConfig({ ...previous, debug: !previous.debug }), /simulated disk failure/);
+        assert.deepStrictEqual(configManager.config, previous);
+        assert.strictEqual(fs.readFileSync(configManager.configFile, 'utf8'), before);
+    } finally { fs.renameSync = originalRename; }
+});
+
+test('F06: Restore rollt beide Dateien bei zweitem Schreibfehler zurueck', () => {
+    configManager.saveMapping([]);
+    const beforeConfig = fs.readFileSync(configManager.configFile, 'utf8');
+    const beforeMapping = fs.readFileSync(configManager.mappingFile, 'utf8');
+    const originalRename = fs.renameSync;
+    let failed = false;
+    fs.renameSync = (from, to) => {
+        if (to === configManager.mappingFile && !failed) { failed = true; throw new Error('mapping write failed'); }
+        return originalRename(from, to);
+    };
+    try {
+        assert.throws(() => configManager.restore({ ...configManager.config, debug: true }, [{ loxone_name: 'restored' }]), /mapping write failed/);
+        assert.strictEqual(fs.readFileSync(configManager.configFile, 'utf8'), beforeConfig);
+        assert.strictEqual(fs.readFileSync(configManager.mappingFile, 'utf8'), beforeMapping);
+        assert.ok(!fs.existsSync(path.join(configManager.dataDir, '.restore-pending.json')));
+    } finally { fs.renameSync = originalRename; }
+});
+
+test('F06: Startup rollt unterbrochenen Restore aus Journal zurueck', () => {
+    const config = fs.readFileSync(configManager.configFile, 'utf8');
+    const mapping = fs.readFileSync(configManager.mappingFile, 'utf8');
+    fs.writeFileSync(path.join(configManager.dataDir, '.restore-pending.json'), JSON.stringify({ version: 1, config, mapping }));
+    fs.writeFileSync(configManager.configFile, JSON.stringify({ debug: 'partial' }));
+    configManager.load();
+    assert.strictEqual(fs.readFileSync(configManager.configFile, 'utf8'), config);
+    assert.strictEqual(fs.readFileSync(configManager.mappingFile, 'utf8'), mapping);
+});
+
 test('ConfigManager - Add Detected Item', (t) => {
     configManager.detectedItems = [];
     configManager.addDetectedItem('new_light');

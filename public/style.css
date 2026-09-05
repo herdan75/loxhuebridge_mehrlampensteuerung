@@ -392,6 +392,15 @@ input:checked + .slider:before { transform: translateX(18px); }
 
 @media (max-width: 560px) {
     body { padding: 12px; }
+    #system-interface .card { padding: 12px; }
+    #system-interface .settings-table,
+    #system-interface .settings-table tbody,
+    #system-interface .settings-table tr { display: block; width: 100%; }
+    #system-interface .settings-table td { display: block; box-sizing: border-box; width: 100%; min-width: 0; }
+    #system-interface .settings-table td:first-child:not([colspan]) { border-bottom: 0; padding-bottom: 0; }
+    .maintenance-actions { flex-wrap: wrap; }
+    .maintenance-actions button { flex: 1 1 140px; min-width: 0; }
+    .multi-sync-schedule-row { grid-template-columns: minmax(40px, 0.8fr) minmax(0, 1.4fr) 50px 60px !important; gap: 4px !important; }
     .modal-box { width: 100%; padding: 18px; border-radius: 12px; }
     .modal-actions { flex-wrap: wrap; }
     .modal-actions .btn-sec,
@@ -417,6 +426,6 @@ input:checked + .slider:before { transform: translateX(18px); }
         .mapping-item { cursor: pointer; transition: background 0.2s, transform 0.1s; }
         .mapping-item:hover { background: #f8f9fa; transform: translateY(-1px); }
         .slider-container { display: flex; align-items: center; gap: 10px; width: 100%; }
-        .slider-container input[type="range"] { flex: 1; }
-        .slider-val { font-family: monospace; width: 60px; text-align: right; color: var(--accent); font-weight: bold; }
+        .slider-container input[type="range"] { flex: 1; min-width: 0; }
+        .slider-val { font-family: monospace; flex: 0 0 60px; text-align: right; color: var(--accent); font-weight: bold; }
         .settings-card { padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 10px; }

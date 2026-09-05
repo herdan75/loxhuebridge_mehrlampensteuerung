@@ -460,9 +460,9 @@
         return div;
     }
 
-    async function loadTargets() { try { targets = await (await fetch('/api/targets')).json(); if(currentTab!=='system') renderDropdown(); } catch(e){ console.error("Fehler bei loadTargets:", e); } }
-    async function loadMappings() { try { mappings = await (await fetch('/api/mapping')).json(); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadMappings:", e); } }
-    async function loadStatus() { try { status = await (await fetch('/api/status')).json(); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadStatus:", e); } }
+    async function loadTargets() { try { targets = await apiRequest('/api/targets'); if(currentTab!=='system') renderDropdown(); } catch(e){ console.error("Fehler bei loadTargets:", e); } }
+    async function loadMappings() { try { mappings = await apiRequest('/api/mapping'); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadMappings:", e); } }
+    async function loadStatus() { try { status = await apiRequest('/api/status'); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadStatus:", e); } }
     async function loadMultiSyncSettingsCache() {
         try {
             const s = await (await fetch('/api/settings')).json();
@@ -495,11 +495,24 @@
         });
     }
 
+    async function apiRequest(url, options = {}) {
+        const response = await fetch(url, { credentials: 'same-origin', ...options });
+        const text = await response.text();
+        let payload;
+        try { payload = text ? JSON.parse(text) : null; }
+        catch { throw new Error(`Ungültige Serverantwort (HTTP ${response.status}).`); }
+        if (!response.ok || payload?.success === false ||
+            (options.method === 'POST' && payload?.success !== true)) {
+            throw new Error(payload?.error || `Anfrage fehlgeschlagen (HTTP ${response.status}).`);
+        }
+        return payload;
+    }
+
     async function addMapping() {
         const nameIn = document.getElementById('inName');
         const hueSel = document.getElementById('hueTarget');
         if(!nameIn.value || !hueSel.value) return alert("Fehlende Daten");
-        mappings.push({
+        const candidate = [...mappings, {
             loxone_name: nameIn.value.toLowerCase(),
             hue_uuid: hueSel.value,
             hue_name: hueSel.options[hueSel.selectedIndex].text,
@@ -512,15 +525,21 @@
             verify_state: false,
             split_on: false,
             repeat_command: false
-        });
-        await fetch('/api/mapping', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(mappings)});
-        nameIn.value=''; loadMappings(); loadTargets();
+        }];
+        try {
+            await apiRequest('/api/mapping', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(candidate)});
+            mappings = candidate;
+            nameIn.value=''; loadMappings(); loadTargets();
+        } catch (error) { alert('Speichern fehlgeschlagen: ' + error.message); }
     }
     async function deleteMapping(name) {
         if(!confirm('Löschen?')) return;
-        mappings = mappings.filter(m=>m.loxone_name !== name);
-        await fetch('/api/mapping', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(mappings)});
-        loadMappings(); loadTargets();
+        const candidate = mappings.filter(m=>m.loxone_name !== name);
+        try {
+            await apiRequest('/api/mapping', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(candidate)});
+            mappings = candidate;
+            loadMappings(); loadTargets();
+        } catch (error) { alert('Löschen fehlgeschlagen: ' + error.message); }
     }
 
     function escapeHtml(value) {
@@ -589,101 +608,41 @@
 
             const settings = getMultiSyncFormSettings(id);
             const items = mappings
-                .filter(m => m.hue_type === 'light' && m.multi_sync === true && (m.multi_sync_group || 'a') === id)
-                .map((entry, index) => {
-                    const offset = normalizeSyncOffset(entry.sync_offset_ms, 0);
-                    const cluster = normalizeSyncCluster(entry.sync_cluster);
-                    return {
-                        entry,
-                        offset,
-                        originalIndex: index,
-                        clusterKey: cluster ? `manual:${cluster.toLowerCase()}` : `single:${entry.hue_uuid || entry.loxone_name || index}`,
-                        clusterName: cluster || 'Einzel'
-                    };
-                });
-
+                .filter(entry => entry.hue_type === 'light' && entry.multi_sync === true && (entry.multi_sync_group || 'a') === id)
+                .map(entry => ({ entry, uuid: entry.hue_uuid }));
+            const bridgeRate = getBridgeMaxCommandsPerSecondFromForm();
+            const scheduleItems = MultiSyncTiming.buildSchedule(items, {
+                ...settings, bridgeMaxCommandsPerSecond: bridgeRate
+            }, item => {
+                const cluster = normalizeSyncCluster(item.entry.sync_cluster);
+                const target = targets.find(target => target.uuid === item.uuid);
+                return {
+                    key: cluster ? 'manual:' + cluster.toLowerCase() : 'auto:' + (target?.deviceId || item.uuid),
+                    name: cluster || target?.deviceName || 'Einzel'
+                };
+            }).map(schedule => ({
+                ...schedule, delay: schedule.delayMs,
+                item: { ...schedule.item, offset: schedule.offset, clusterName: schedule.clusterName, originalIndex: schedule.originalIndex }
+            }));
             const activeLights = items.length;
-            const commandSpacingMs = Math.ceil(1000 / settings.maxCommandsPerSecond);
-            const sameClusterSpacingMs = settings.sameClusterSpacingMs;
-            const baseDelayMs = activeLights ? Math.max(0, -Math.min(...items.map(item => item.offset))) : 0;
-            let lastDelay = -commandSpacingMs;
-            let previousClusterKey = null;
-            let commandIndex = 0;
-            const clusters = new Map();
-
-            items.forEach(item => {
-                if (!clusters.has(item.clusterKey)) {
-                    clusters.set(item.clusterKey, {
-                        key: item.clusterKey,
-                        name: item.clusterName,
-                        firstIndex: item.originalIndex,
-                        minOffset: item.offset,
-                        items: []
-                    });
-                }
-                const cluster = clusters.get(item.clusterKey);
-                cluster.minOffset = Math.min(cluster.minOffset, item.offset);
-                cluster.items.push(item);
-            });
-
-            const scheduleItems = [];
-            Array.from(clusters.values())
-                .sort((a, b) => {
-                    if (a.minOffset !== b.minOffset) return a.minOffset - b.minOffset;
-                    return a.firstIndex - b.firstIndex;
-                })
-                .forEach((cluster, clusterIndex) => {
-                    cluster.items
-                        .sort((a, b) => {
-                            if (a.offset !== b.offset) return a.offset - b.offset;
-                            return a.originalIndex - b.originalIndex;
-                        })
-                        .forEach((item, withinClusterIndex) => {
-                            const spacingFromPrevious = previousClusterKey === item.clusterKey ? sameClusterSpacingMs : commandSpacingMs;
-                            const batchDelay = previousClusterKey === item.clusterKey ? 0 : Math.floor(commandIndex / settings.batchSize) * settings.batchDelayMs;
-                            const requestedDelay = Math.max(0, Math.round(
-                                baseDelayMs
-                                + cluster.minOffset
-                                + (clusterIndex * commandSpacingMs)
-                                + Math.max(0, item.offset - cluster.minOffset)
-                                + (withinClusterIndex * sameClusterSpacingMs)
-                                + batchDelay
-                            ));
-                            const delay = Math.max(requestedDelay, lastDelay + spacingFromPrevious);
-
-                            scheduleItems.push({ item, requestedDelay, delay });
-                            lastDelay = delay;
-                            previousClusterKey = item.clusterKey;
-                            commandIndex += 1;
-                        });
-                });
-
-            scheduleItems.forEach((schedule, index) => {
-                const next = scheduleItems[index + 1];
-                schedule.schedulerSpacingMs = next && next.item.clusterKey === schedule.item.clusterKey
-                    ? sameClusterSpacingMs
-                    : commandSpacingMs;
-            });
-
-            const scheduleItemsSorted = scheduleItems
-                .slice()
-                .sort((a, b) => {
-                    if (a.delay !== b.delay) return a.delay - b.delay;
-                    return a.item.originalIndex - b.item.originalIndex;
-                });
-
-            const lastCommandMs = scheduleItems.length ? Math.max(...scheduleItems.map(item => item.delay)) : 0;
+            const commandSpacingMs = Math.max(Math.ceil(1000 / bridgeRate), Math.ceil(1000 / settings.maxCommandsPerSecond));
+            const sameClusterSpacingMs = Math.max(Math.ceil(1000 / bridgeRate), settings.sameClusterSpacingMs);
+            const scheduleItemsSorted = scheduleItems;
+            const lastCommandMs = scheduleItems.at(-1)?.delay || 0;
             const totalMs = settings.syncWindowMs + lastCommandMs;
             const effectiveRate = activeLights > 1 && lastCommandMs > 0
-                ? ((activeLights - 1) / (lastCommandMs / 1000)).toFixed(1)
-                : activeLights.toFixed(1);
-            const hint = settings.maxCommandsPerSecond <= 10
+                ? ((activeLights - 1) / (lastCommandMs / 1000)).toFixed(1) : activeLights.toFixed(1);
+            const smallestGap = scheduleItems.length > 1
+                ? Math.min(...scheduleItems.slice(1).map((item, i) => item.delay - scheduleItems[i].delay))
+                : commandSpacingMs;
+            const fastestRate = 1000 / Math.max(1, smallestGap);
+            const hint = fastestRate <= 10
                 ? 'Hue-konservativ'
-                : (settings.maxCommandsPerSecond <= 25 ? 'Schnell testen' : 'Experimentell');
+                : 'Experimentell';
             const scheduleHtml = scheduleItems.length
                 ? `<div style="margin-top:8px; max-height:150px; overflow:auto; border-top:1px solid var(--border); padding-top:6px;">
                     ${scheduleItemsSorted.map(schedule => `
-                        <div style="display:grid; grid-template-columns: minmax(70px,0.8fr) minmax(0,1.4fr) 70px 80px; gap:8px; font-size:0.75rem; padding:2px 0;">
+                        <div class="multi-sync-schedule-row" style="display:grid; grid-template-columns: minmax(70px,0.8fr) minmax(0,1.4fr) 70px 80px; gap:8px; font-size:0.75rem; padding:2px 0;">
                             <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(schedule.item.clusterName)}</span>
                             <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(schedule.item.entry.loxone_name)}</span>
                             <span>${schedule.item.offset > 0 ? '+' : ''}${schedule.item.offset} ms</span>
@@ -698,8 +657,8 @@
                     <div><b>${activeLights}</b><br><span>aktive Lampen</span></div>
                     <div><b>${commandSpacingMs} ms</b><br><span>Mindestabstand</span></div>
                     <div><b>${sameClusterSpacingMs} ms</b><br><span>im Cluster</span></div>
-                    <div><b>${Math.round(totalMs)} ms</b><br><span>bis letzter Befehl</span></div>
-                    <div><b>${effectiveRate}/s</b><br><span>effektiv</span></div>
+                    <div><b>${Math.round(totalMs)} ms</b><br><span>Planzeit letzter Befehl</span></div>
+                    <div><b>${effectiveRate}/s</b><br><span>geplante Rate</span></div>
                 </div>
                 <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">
                     Modus: ${hint}. Globale Bridge-Grenze: ${getBridgeMaxCommandsPerSecondFromForm()}/s.
@@ -714,13 +673,13 @@
         const groups = cfg.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}`, syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 10, sameClusterSpacingMs: 10 }));
         let html = `
             <tr>
-                <td>${infoLabel('Max. Bridge-Befehle/s', 'Globale Obergrenze für alle Hue-Befehle aus Multi-Sync-Gruppen. Senken, wenn HUE RATE LIMIT 429 erscheint oder mehrere Gruppen gleichzeitig schalten.')}</td>
+                <td>${infoLabel('Max. Bridge-Befehle/s', 'Harte Mindestpause für alle Hue-PUTs, auch Cluster, Effekte, Retries und Funkmaßnahmen. Bei 20/s mindestens 50 ms zwischen Starts. Bei Hue 429 senken; zunächst 10/s testen.')}</td>
                 <td>
                     <div class="slider-container">
                         <input type="range" id="sys_multiBridgeMaxCommandsPerSecond" min="1" max="100" step="1" value="${cfg.bridgeMaxCommandsPerSecond ?? 30}" oninput="document.getElementById('val_multiBridgeMaxRate').innerText = this.value + ' /s'; renderMultiSyncPreview();">
                         <span id="val_multiBridgeMaxRate" class="slider-val">${cfg.bridgeMaxCommandsPerSecond ?? 30} /s</span>
                     </div>
-                    <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Sicherheitsgrenze über alle Multi-Sync-Gruppen hinweg.</div>
+                    <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Globale Grenze einschließlich Cluster, Effekte und Wiederholungen.</div>
                 </td>
             </tr>
         `;
@@ -738,9 +697,9 @@
                                 <tr><td>${infoLabel('Sammelfenster', 'Zeitfenster, in dem schnell eintreffende Loxone-Befehle gesammelt werden. Höher = stabiler bei Szenen, aber etwas späterer Start.')}</td><td><div class="slider-container"><input type="range" id="sys_multiSyncWindowMs_${id}" min="50" max="500" step="10" value="${group.syncWindowMs ?? 120}" oninput="document.getElementById('val_multiSyncWindow_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSyncWindow_${id}" class="slider-val">${group.syncWindowMs ?? 120} ms</span></div></td></tr>
                                 <tr><td>${infoLabel('Batchgröße', 'Anzahl Lampen, nach denen eine zusätzliche Batch-Pause eingeplant wird. Bei 10 Lampen und Batchgröße 10 gibt es praktisch keinen Zwischenstopp.')}</td><td><input type="number" id="sys_multiBatchSize_${id}" min="1" max="20" step="1" value="${group.batchSize ?? 4}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
                                 <tr><td>${infoLabel('Batch-Pause', 'Zusätzliche Pause nach jedem Batch. Hilft nur, wenn die Batchgröße kleiner ist als die Lampenanzahl. Bei Batchgröße 10 und 10 Lampen meist 0 ms sinnvoll.')}</td><td><div class="slider-container"><input type="range" id="sys_multiBatchDelayMs_${id}" min="0" max="300" step="10" value="${group.batchDelayMs ?? 30}" oninput="document.getElementById('val_multiBatchDelay_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiBatchDelay_${id}" class="slider-val">${group.batchDelayMs ?? 30} ms</span></div></td></tr>
-                                <tr><td>${infoLabel('Max. Lichtbefehle/s', 'Obergrenze für diese Gruppe. Wichtigster Wert gegen Hue 429. Niedriger = stabiler, höher = schneller. Typisch 15-20/s testen.')}</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
-                                <tr><td>${infoLabel('Abstand im Ablauf-Cluster', 'Kleiner Abstand zwischen Lampen mit gleichem Ablauf-Cluster, z. B. Deckenlampe top/bottom. Zwischen Clustern gilt weiter Max. Lichtbefehle/s.')}</td><td><div class="slider-container"><input type="range" id="sys_multiSameClusterSpacingMs_${id}" min="0" max="50" step="1" value="${group.sameClusterSpacingMs ?? 10}" oninput="document.getElementById('val_multiSameClusterSpacing_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSameClusterSpacing_${id}" class="slider-val">${group.sameClusterSpacingMs ?? 10} ms</span></div></td></tr>
-                                <tr><td>${infoLabel('Timing-Test', 'Simulation für diese Gruppe: Anzahl aktiver Lampen, Mindestabstand, Zeitpunkt des letzten Befehls und effektive Befehlsrate.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
+                                <tr><td>${infoLabel('Max. Lichtbefehle/s', 'Bestimmt den Abstand zwischen verschiedenen Clustern dieser Gruppe. Im Cluster gilt dessen Abstand. Die globale Grenze begrenzt beide; zunächst 10/s testen.')}</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
+                                <tr><td>${infoLabel('Abstand im Ablauf-Cluster', 'Sollabstand innerhalb eines Clusters. Die globale Bridge-Grenze hat Vorrang: Bei 20/s sind auch mit Sollwert 5 ms mindestens 50 ms nötig.')}</td><td><div class="slider-container"><input type="range" id="sys_multiSameClusterSpacingMs_${id}" min="0" max="50" step="1" value="${group.sameClusterSpacingMs ?? 10}" oninput="document.getElementById('val_multiSameClusterSpacing_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSameClusterSpacing_${id}" class="slider-val">${group.sameClusterSpacingMs ?? 10} ms</span></div></td></tr>
+                                <tr><td>${infoLabel('Timing-Test', 'Rechnerischer Plan einschließlich globaler Grenze. Keine Live-Messung: spätere Eingänge, Warteschlangen, Bridge-Antwortzeiten und Retries können den Ablauf verlängern.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
                             </table>
                         </details>
                     </td>
@@ -794,16 +753,12 @@
             return;
         }
 
-        const res = await fetch('/api/security/settings', {
+        try {
+        const result = await apiRequest('/api/security/settings', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ authEnabled, authUser, password })
         });
-        const result = await res.json().catch(() => ({}));
-        if (!res.ok || result.success === false) {
-            alert(result.error || 'Zugriffsschutz konnte nicht gespeichert werden.');
-            return;
-        }
 
         securitySettings = {
             authEnabled: result.authEnabled,
@@ -812,6 +767,7 @@
         };
         alert('Zugriffsschutz gespeichert. Beim nächsten Aufruf ist eine Anmeldung erforderlich.');
         loadSettings();
+        } catch (error) { alert('Zugriffsschutz nicht gespeichert: ' + error.message); }
     }
 
     async function saveSettings() {
@@ -830,7 +786,7 @@
         d.disableLogDisk = document.getElementById('sys_disableLogDisk').checked;
 
         try {
-            await fetch('/api/setup/loxone', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+            await apiRequest('/api/setup/loxone', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                 loxoneIp: d.loxIp, loxonePort: d.loxPort, debug: d.debug,
                 transitionTime: d.transitionTime, throttleTime: d.throttleTime, eventStreamWatchdogTimeoutSeconds: d.eventStreamWatchdogTimeoutSeconds,
                 mqttEnabled: d.mqttEnabled, mqttBroker: d.mqttBroker, mqttPort: d.mqttPort, mqttUser: d.mqttUser, mqttPass: d.mqttPass, mqttPassClear: d.mqttPassClear, mqttPrefix: d.mqttPrefix,
@@ -842,17 +798,16 @@
             })});
             alert("Gespeichert!");
             loadSettings();
-        } catch(e) { alert("Fehler!"); }
+        } catch(e) { alert('Speichern fehlgeschlagen: ' + e.message); }
     }
 
     async function loadSettings() {
         try {
-            const [settingsRes, securityRes] = await Promise.all([
-                fetch('/api/settings'),
-                fetch('/api/security/status')
+            const [s, security] = await Promise.all([
+                apiRequest('/api/settings'),
+                apiRequest('/api/security/status')
             ]);
-            const s = await settingsRes.json();
-            securitySettings = securityRes.ok ? await securityRes.json() : securitySettings;
+            securitySettings = security;
             multiLightControlSettings = s.multiLightControl || multiLightControlSettings;
             const table = document.getElementById('settingsTable');
             const v = (val) => val !== undefined ? val : '';
@@ -1089,13 +1044,11 @@
         if (statusEl) statusEl.textContent = 'Speichere...';
 
         try {
-            const res = await fetch(`/api/mapping/${encodeURIComponent(detailsDraft.loxoneName)}/settings`, {
+            const payload = await apiRequest(`/api/mapping/${encodeURIComponent(detailsDraft.loxoneName)}/settings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
-            const payload = await res.json();
-            if (!res.ok || !payload.success) throw new Error(payload.error || 'Speichern fehlgeschlagen');
 
             const index = mappings.findIndex(m => m.loxone_name === detailsDraft.loxoneName);
             if (index >= 0) mappings[index] = payload.mapping;
@@ -1270,7 +1223,11 @@
         closeModal('exportModal');
     }
     
-    async function restartServer() { if(confirm("Neustart?")) await fetch('/api/system/restart', {method:'POST'}); }
+    async function restartServer() {
+        if (!confirm('Neustart?')) return;
+        try { await apiRequest('/api/system/restart', {method:'POST'}); }
+        catch (error) { alert('Neustart fehlgeschlagen: ' + error.message); }
+    }
     function downloadLog() { window.location.href = '/api/system/logdownload'; }
     function downloadBackup() { window.location.href = '/api/system/backup'; }
     function downloadBackupRedacted() { window.location.href = '/api/system/backup?redactSecrets=true'; }
@@ -1282,11 +1239,12 @@
         reader.onload = async (e) => {
             try {
                 const json = JSON.parse(e.target.result);
-                await fetch('/api/system/restore', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(json)});
+                await apiRequest('/api/system/restore', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(json)});
                 alert("Wiederhergestellt! Neustart...");
                 setTimeout(() => location.reload(), 3000);
             } catch(err) { alert("Fehler: " + err.message); }
         };
+        reader.onerror = () => alert('Backup-Datei konnte nicht gelesen werden.');
         reader.readAsText(file);
     }
     function updateTransLabel(val, id, unit) { document.getElementById(id).innerText = val + ' ' + unit; }

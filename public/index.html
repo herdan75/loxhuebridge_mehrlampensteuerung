@@ -65,11 +65,11 @@
         
         <h2>Wartung & Backup</h2>
         <div class="card">
-            <div style="display:flex; gap:10px; margin-bottom:15px;">
+            <div class="maintenance-actions" style="display:flex; gap:10px; margin-bottom:15px;">
                 <button class="add-btn" style="background:#666; margin:0;" onclick="downloadLog()">📜 Logs herunterladen</button>
                 <button class="add-btn" style="background:var(--danger); margin:0;" onclick="restartServer()">🔄 Server Neustart</button>
             </div>
-            <div style="display:flex; gap:10px;">
+            <div class="maintenance-actions" style="display:flex; gap:10px;">
                 <button class="add-btn" style="background:var(--text-main); margin:0;" onclick="downloadBackup()">💾 Backup erstellen (Export)</button>
                 <button class="add-btn" style="background:transparent; border:1px solid var(--text-main); color:var(--text-main); margin:0;" onclick="downloadBackupRedacted()">💾 Backup ohne Zugangsdaten</button>
                 <button class="add-btn" style="background:transparent; border:1px solid var(--text-main); color:var(--text-main); margin:0;" onclick="triggerRestore()">📂 Backup wiederherstellen (Import)</button>
@@ -135,6 +135,7 @@
     </div>
 </div>
 
+<script src="multisync.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

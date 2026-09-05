@@ -10,8 +10,10 @@ COPY package*.json ./
 # Produktions-Abhängigkeiten installieren.
 RUN npm ci --omit=dev
 
-# Anwendung kopieren.
-COPY . .
+# Nur Anwendungscode kopieren; Laufzeitdaten bleiben im eingebundenen DATA_DIR.
+COPY lib/ ./lib/
+COPY public/ ./public/
+COPY server.js ./
 
 EXPOSE 8555
 

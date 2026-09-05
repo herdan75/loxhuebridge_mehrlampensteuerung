@@ -7,9 +7,15 @@ const axiosPutCalls = [];
 const axiosPutResponses = [];
 const axiosGetCalls = [];
 const axiosGetResponses = [];
+const axiosStreamResponses = [];
+const axiosStreamCalls = [];
 Module._load = function mockOptionalDeps(request, parent, isMain) {
     if (request === 'axios') {
-        const axiosMock = async () => ({ data: { data: [] } });
+        const axiosMock = async options => {
+            axiosStreamCalls.push(options);
+            const response = axiosStreamResponses.shift();
+            return typeof response === 'function' ? response(options) : response || { data: { data: [] } };
+        };
         axiosMock.get = async (url, options) => {
             axiosGetCalls.push({ url, options });
             if (axiosGetResponses.length) {
@@ -22,7 +28,7 @@ Module._load = function mockOptionalDeps(request, parent, isMain) {
         };
         axiosMock.post = async () => ({ data: [] });
         axiosMock.put = async (url, payload, options) => {
-            axiosPutCalls.push({ url, payload, options });
+            axiosPutCalls.push({ url, payload, options, startedAt: Date.now() });
             if (axiosPutResponses.length) {
                 const response = axiosPutResponses.shift();
                 if (response instanceof Error) throw response;
@@ -105,6 +111,142 @@ function setFastMultiSyncConfig() {
     configManager.config.appKey = 'app-key';
     configManager.config.transitionTime = 0;
 }
+
+test('F04: bereits eingereihte Verifikation wird nach SSE-Bestaetigung nicht mehr gesendet', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    configManager.mapping = [];
+    axiosPutCalls.length = 0;
+    await updateLightWithQueue('f04-queued', 'light', { on: { on: true }, dimming: { brightness: 80 } }, 'f04-queued');
+    let release;
+    const gate = scheduleHuePutTask({ execute: () => new Promise(resolve => { release = resolve; }) });
+    while (!release) await wait(1);
+    const correction = updateLightWithQueue('f04-queued', 'light', { on: { on: true }, dimming: { brightness: 80 } }, 'f04-queued', null, {
+        commandGeneration: 1, reliabilityFollowUp: true, verificationFollowUp: true
+    });
+    recordLampEvent('f04-queued', { on: { on: true }, dimming: { brightness: 80 } });
+    release();
+    await gate;
+    await correction;
+    assert.equal(axiosPutCalls.length, 1);
+});
+
+test('F12: alte Antwort ersetzt keinen bereits verbundenen neuen Stream', async () => {
+    const { PassThrough } = require('node:stream');
+    configManager.isConfigured = true;
+    let release;
+    let requested;
+    const started = new Promise(resolve => { requested = resolve; });
+    axiosStreamResponses.push(() => new Promise(resolve => { release = resolve; requested(); }));
+    const oldConnection = hueManager.startEventStream();
+    await started;
+    hueManager.stopEventStream();
+    const fresh = new PassThrough();
+    axiosStreamResponses.push({ data: fresh });
+    await hueManager.startEventStream();
+    const old = new PassThrough();
+    release({ data: old });
+    await oldConnection;
+    assert.equal(old.destroyed, true);
+    assert.equal(fresh.destroyed, false);
+    hueManager.stopEventStream();
+    assert.equal(fresh.destroyed, true);
+});
+
+test('F15: Shutdown verwirft ausstehende und neue Hue-PUTs', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+    let release;
+    const gate = scheduleHuePutTask({ execute: () => new Promise(resolve => { release = resolve; }) });
+    const queued = updateLightWithQueue('f15-stop', 'light', { on: { on: true } }, 'stop');
+    hueManager.close();
+    release();
+    await gate;
+    await queued;
+    await putHueWithRateLimitRetry('https://bridge/clip/v2/resource/light/direct', { on: { on: true } });
+    assert.equal(axiosPutCalls.length, 0);
+    resetHueSchedulerForTests();
+});
+
+test('F12: Stop bricht Aufbau ab und zerstoert verspaetete SSE-Antwort', async () => {
+    const { PassThrough } = require('node:stream');
+    configManager.isConfigured = true;
+    configManager.mapping = [];
+    let resolveResponse;
+    let requested;
+    const started = new Promise(resolve => { requested = resolve; });
+    axiosStreamResponses.push(options => new Promise(resolve => { resolveResponse = resolve; requested(options); }));
+    const connection = hueManager.startEventStream();
+    const options = await started;
+    hueManager.stopEventStream();
+    assert.equal(options.signal.aborted, true);
+    const late = new PassThrough();
+    resolveResponse({ data: late });
+    await connection;
+    assert.equal(late.destroyed, true);
+    assert.equal(late.listenerCount('data'), 0);
+});
+
+test('F12: aktiver SSE-Stream verarbeitet fragmentierte Events und Stop schliesst ihn', async () => {
+    const { PassThrough } = require('node:stream');
+    const stream = new PassThrough();
+    configManager.isConfigured = true;
+    configManager.mapping = [{ hue_type: 'light', hue_uuid: 'f12-light', loxone_name: 'f12', sync_lox: false }];
+    axiosStreamResponses.push({ data: stream });
+    await hueManager.startEventStream();
+    const options = axiosStreamCalls.at(-1);
+    assert.equal(options.timeout, 0);
+    assert.equal(options.maxRedirects, 0);
+    stream.write('data: [{"type":"update","data":[{"id":"f12-light","on":');
+    stream.write('{"on":true}}]}]\n\n');
+    assert.equal(configManager.statusCache.f12.on, 1);
+    hueManager.stopEventStream();
+    assert.equal(stream.destroyed, true);
+});
+
+test('F13: Hue-Requestkonfiguration erlaubt keine Redirects mit Anwendungsschluessel', () => {
+    const options = _internals.getHueRequestConfig({ maxRedirects: 5 });
+    assert.equal(options.maxRedirects, 0);
+    assert.equal(options.headers['hue-application-key'], configManager.config.appKey);
+});
+
+test('F12: Verbindungsaufbau hat endliche Frist', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    configManager.isConfigured = true;
+    let requested;
+    const started = new Promise(resolve => { requested = resolve; });
+    axiosStreamResponses.push(options => new Promise((resolve, reject) => {
+        requested(options);
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    }));
+    const connection = hueManager.startEventStream();
+    const options = await started;
+    t.mock.timers.tick(getHueRequestTimeoutMs());
+    await connection;
+    assert.equal(options.signal.aborted, true);
+    hueManager.stopEventStream();
+});
+
+test('F09: unabhängige Effekte derselben Gruppe bleiben bestehen, OFF ersetzt nur sein Ziel', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    axiosPutCalls.length = 0;
+    const a = { hue_uuid: 'f09-a', hue_type: 'light', loxone_name: 'a', sync_offset_ms: 80 };
+    const b = { hue_uuid: 'f09-b', hue_type: 'light', loxone_name: 'b', sync_offset_ms: 80 };
+    await hueManager.executeEffect(a, 'candle');
+    await hueManager.executeEffect(b, 'fire');
+    await wait(300);
+    assert.deepStrictEqual(axiosPutCalls.map(c => c.payload.effects?.effect), ['candle', 'fire']);
+    axiosPutCalls.length = 0;
+    await hueManager.executeEffect(a, 'candle');
+    await hueManager.executeEffect(b, 'fire');
+    await hueManager.executeCommand(a, '0');
+    await wait(300);
+    assert.ok(!axiosPutCalls.some(c => c.url.endsWith('/f09-a') && c.payload.effects));
+    assert.ok(axiosPutCalls.some(c => c.url.endsWith('/f09-b') && c.payload.effects?.effect === 'fire'));
+});
 
 // --- Farb-Mathematik ---
 test('kelvinToMirek: Standard-Werte', () => {
@@ -401,6 +543,105 @@ test('verify_state erkennt Abweichung und steuert nach', async () => {
     assert.strictEqual(diag.nachgesteuert, 1);
 });
 
+test('F08: Scheduler-Pause beginnt beim Request-Start', async (t) => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({ bridgeMaxCommandsPerSecond: 10 });
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 });
+    const starts = [];
+    const tasks = [1, 2].map(() => scheduleHuePutTask({ source: 'multi_sync', execute: async () => {
+        starts.push(Date.now()); await wait(80);
+    }}));
+    const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+    t.mock.timers.tick(80); await flush();
+    t.mock.timers.tick(20); await flush();
+    const at100 = starts.length;
+    t.mock.timers.tick(1000); await flush();
+    t.mock.timers.tick(1000); await flush();
+    await Promise.all(tasks);
+    assert.strictEqual(at100, 2);
+});
+
+test('F07: Alter Queue-Befehl wird vor dem ersten PUT ersetzt', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    configManager.mapping = [];
+    axiosPutCalls.length = 0;
+    const entry = { hue_uuid: 'f07', hue_type: 'light', loxone_name: 'f07' };
+    const blocker = scheduleHuePutTask({ execute: () => wait(40), schedulerSpacingMs: 0 });
+    const old = hueManager.executeCommand(entry, '80');
+    await hueManager.executeCommand(entry, '0');
+    await Promise.all([blocker, old]);
+    assert.deepStrictEqual(axiosPutCalls.map(c => c.payload.on.on), [false]);
+});
+
+test('F07: Neuer Befehl verwirft alten 429-Retry', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    axiosPutCalls.length = 0;
+    const entry = { hue_uuid: 'f07-retry', hue_type: 'light', loxone_name: 'f07-retry' };
+    axiosPutResponses.push(() => {
+        hueManager.executeCommand(entry, '0');
+        const error = new Error('429');
+        error.response = { status: 429, headers: { 'retry-after': '0.1' } };
+        throw error;
+    });
+    await hueManager.executeCommand(entry, '80');
+    assert.deepStrictEqual(axiosPutCalls.map(c => c.payload.on.on), [true, false]);
+});
+
+test('F05: Hue-Fachfehler und reine PUT-Annahme melden keinen Istzustand', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    const entry = { hue_uuid: 'f05', hue_type: 'light', loxone_name: 'f05' };
+    configManager.mapping = [entry];
+    configManager.statusCache = { f05: { on: 0, bri: 10 } };
+    axiosPutResponses.push({ data: { data: [], errors: [{ error_code: 'communication_error' }] } });
+    await hueManager.executeCommand(entry, '80');
+    assert.deepStrictEqual(configManager.statusCache.f05, { on: 0, bri: 10 });
+    assert.strictEqual(getLampDiagnostics().find(d => d.uuid === 'f05').communicationErrors, 1);
+    await hueManager.executeCommand(entry, '50');
+    assert.deepStrictEqual(configManager.statusCache.f05, { on: 0, bri: 10 });
+    axiosPutResponses.push({ data: { errors: [{ description: 'unsupported field' }] } });
+    await assert.rejects(putHueWithRateLimitRetry('https://bridge/light/f05', {}), e => e.code === 'HUE_RESPONSE_ERROR');
+});
+
+test('F04: Raum-Aus verwirft alte Lampen-Nachsteuerungen', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    hueManager.HUE_RESOURCE_DELAYS.grouped_light.delayMs = 0;
+    setReliabilityTimingsForTests({ verifyDelaysMs: [40] });
+    axiosPutCalls.length = 0;
+    axiosGetResponses.length = 0;
+    const entry = { hue_uuid: 'f04-light', hue_type: 'light', loxone_name: 'f04', verify_state: true };
+    configManager.mapping = [entry];
+    axiosGetResponses.push({ data: { data: [{ on: { on: false }, dimming: { brightness: 80 } }] } });
+    await hueManager.executeCommand(entry, '80');
+    await hueManager.executeCommand({ hue_uuid: 'f04-room', hue_type: 'group', loxone_name: 'room' }, '0');
+    await wait(100);
+    assert.deepStrictEqual(axiosPutCalls.map(call => call.payload.on.on), [true, false]);
+    axiosGetResponses.length = 0;
+});
+
+test('F04: Nach bestaetigter Uebernahme keine Korrektur externer Bedienung', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    setReliabilityTimingsForTests({ verifyDelaysMs: [30] });
+    axiosPutCalls.length = 0;
+    const entry = { hue_uuid: 'f04-confirmed', hue_type: 'light', loxone_name: 'confirmed', verify_state: true };
+    configManager.mapping = [entry];
+    await hueManager.executeCommand(entry, '80');
+    recordLampEvent(entry.hue_uuid, { on: { on: true }, dimming: { brightness: 80 } });
+    axiosGetResponses.push({ data: { data: [{ on: { on: false }, dimming: { brightness: 80 } }] } });
+    await wait(80);
+    assert.strictEqual(axiosPutCalls.length, 1);
+    axiosGetResponses.length = 0;
+});
+
 test('Runtime-Konfiguration setzt Light Queue Delay aus throttleTime', () => {
     configManager.config.throttleTime = 250;
     hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 100;
@@ -579,6 +820,31 @@ test('HueScheduler Bridge-Maximum bleibt globale Untergrenze', () => {
     assert.strictEqual(getHueSchedulerSpacingMs('light', 'effect'), 50);
 });
 
+test('F01: Cluster-Abstand unterschreitet die globale Bridge-Grenze nicht', async () => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({ bridgeMaxCommandsPerSecond: 10 });
+    const starts = [];
+    await Promise.all([1, 2, 3].map(() => scheduleHuePutTask({
+        source: 'multi_sync', schedulerSpacingMs: 1,
+        execute: async () => { starts.push(Date.now()); }
+    })));
+    assert.ok(starts[1] - starts[0] >= 100);
+    assert.ok(starts[2] - starts[1] >= 100);
+});
+
+test('F01: Jeder echte PUT und Retry verbraucht das globale Budget', async () => {
+    resetHueSchedulerForTests();
+    configManager.config.multiLightControl = configManager.getDefaultMultiLightControl({ bridgeMaxCommandsPerSecond: 5 });
+    axiosPutCalls.length = 0;
+    const error = new Error('429');
+    error.response = { status: 429, headers: { 'retry-after': '0.1' } };
+    axiosPutResponses.push(error, { data: [] });
+    await putHueWithRateLimitRetry('https://bridge/light/f01', {});
+    await putHueWithRateLimitRetry('https://bridge/light/f01-next', {});
+    assert.ok(axiosPutCalls[1].startedAt - axiosPutCalls[0].startedAt >= 200);
+    assert.ok(axiosPutCalls[2].startedAt - axiosPutCalls[1].startedAt >= 200);
+});
+
 test('HueScheduler setzt globale Penalty bei 429', () => {
     resetHueSchedulerForTests();
     const now = Date.now();
@@ -671,6 +937,25 @@ test('executeCommand behandelt unbekannte Textwerte nicht als Ausschalten', asyn
     );
 
     assert.strictEqual(axiosPutCalls.length, 0);
+});
+
+test('F03: RGB mit Praefix 20 bleibt RGB', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    configManager.mapping = [];
+    axiosPutCalls.length = 0;
+    await hueManager.executeCommand({ hue_uuid: 'f03', loxone_name: 'f03', hue_type: 'light' }, '20000000');
+    assert.strictEqual(axiosPutCalls[0].payload.dimming.brightness, 20);
+    assert.ok(axiosPutCalls[0].payload.color);
+    await assert.rejects(hueManager.executeCommand({ hue_uuid: 'f03' }, '201001500'));
+});
+
+test('F02: Spaeteres Ein ersetzt Aus, reine Teilwerte schalten nicht ein', () => {
+    const off = { on: { on: false } };
+    const on = { on: { on: true }, dimming: { brightness: 80 } };
+    assert.deepStrictEqual(mergeHuePayload(off, on), on);
+    assert.deepStrictEqual(mergeHuePayload(on, off), off);
+    assert.deepStrictEqual(mergeHuePayload(off, { dimming: { brightness: 80 } }), off);
 });
 
 test('RGB-Komponenten werden auf 0..100 validiert', () => {
@@ -1013,7 +1298,7 @@ test('Multi-Sync Payload-Merge behandelt Farbkonflikte eindeutig', () => {
     );
 });
 
-test('Multi-Sync Payload-Merge priorisiert Aus eindeutig', () => {
+test('Multi-Sync Payload-Merge priorisiert den letzten Schaltzustand', () => {
     assert.deepStrictEqual(
         mergeHuePayload(
             { on: { on: true }, dimming: { brightness: 50 }, color: { xy: { x: 0.2, y: 0.4 } } },
@@ -1027,7 +1312,7 @@ test('Multi-Sync Payload-Merge priorisiert Aus eindeutig', () => {
             { on: { on: false } },
             { on: { on: true }, dimming: { brightness: 50 } }
         ),
-        { on: { on: false } }
+        { on: { on: true }, dimming: { brightness: 50 } }
     );
 });
 
@@ -1328,7 +1613,8 @@ test('Multi-Sync Preview trennt Lampen nach Gruppe', () => {
     assert.strictEqual(groupA.settings.name, 'Wohnzimmer');
     assert.strictEqual(groupA.activeLights, 2);
     assert.strictEqual(groupA.schedule[0].syncCluster, 'TV');
-    assert.strictEqual(groupA.schedule[1].delayMs - groupA.schedule[0].delayMs, 10);
+    assert.strictEqual(groupA.schedule[1].delayMs - groupA.schedule[0].delayMs, 34);
+    assert.strictEqual(groupA.sameClusterSpacingMs, 34);
     assert.strictEqual(groupB.settings.name, 'Buero');
     assert.strictEqual(groupB.activeLights, 1);
 });

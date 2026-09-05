@@ -45,7 +45,11 @@ Module._load = function mockOptionalDeps(request, parent, isMain) {
     return originalLoad(request, parent, isMain);
 };
 
+const previousDataDir = process.env.DATA_DIR;
+process.env.DATA_DIR = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'loxhue-routes-'));
 const configManager = require('../lib/config');
+if (previousDataDir === undefined) delete process.env.DATA_DIR;
+else process.env.DATA_DIR = previousDataDir;
 const routes = require('../lib/routes');
 
 function getRouteHandler(path) {
@@ -113,6 +117,22 @@ test('Routes - ungültige Warmweiss-CT-Werte werden mit HTTP 400 abgelehnt', asy
     assert.strictEqual(statusCode, 400);
 });
 
+test('F06: API meldet Speicherfehler und behaelt Runtime-Werte', () => {
+    const save = configManager.saveConfig;
+    const previous = { ...configManager.config };
+    configManager.saveConfig = () => { throw new Error('disk full'); };
+    let status, result;
+    try {
+        getRouteHandler('/api/settings/debug')({ body: { active: !previous.debug } }, {
+            status(code) { status = code; return this; },
+            json(body) { result = body; }
+        });
+        assert.strictEqual(status, 500);
+        assert.strictEqual(result.success, false);
+        assert.deepStrictEqual(configManager.config, previous);
+    } finally { configManager.saveConfig = save; }
+});
+
 test('Routes - Security Status gibt keine Passwortdaten zurück', () => {
     configManager.config.authEnabled = true;
     configManager.config.authUser = 'admin';
@@ -157,7 +177,7 @@ test('Routes - Security Aktivierung ohne Passwort wird abgelehnt', () => {
     assert.strictEqual(configManager.config.authEnabled, false);
 });
 
-test('Routes - Security speichert Passwort nur als Hash', () => {
+test('Routes - Security speichert Passwort nur als Hash', async () => {
     configManager.config.authEnabled = false;
     configManager.config.authUser = 'admin';
     configManager.config.authPasswordHash = '';
@@ -171,7 +191,7 @@ test('Routes - Security speichert Passwort nur als Hash', () => {
         }
     };
 
-    handler({ body: { authEnabled: true, authUser: 'admin', password: 'top-secret-pass' } }, res);
+    await handler({ body: { authEnabled: true, authUser: 'admin', password: 'top-secret-pass' } }, res);
 
     assert.strictEqual(payload.success, true);
     assert.strictEqual(configManager.config.authEnabled, true);
@@ -356,7 +376,7 @@ test('Routes - leeres MQTT Passwort bleibt beim Speichern unverändert', () => {
     const originalSaveConfig = configManager.saveConfig;
     const originalLoad = configManager.load;
     const originalStartEventStream = hueManager.startEventStream;
-    configManager.saveConfig = () => {};
+    configManager.saveConfig = candidate => { configManager.config = candidate; };
     configManager.load = () => {};
     hueManager.startEventStream = () => {};
 

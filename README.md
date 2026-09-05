@@ -10,7 +10,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.10-dev Mehrlampensteuerung
+## 🚀 Features V2.5.11-dev Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
@@ -30,9 +30,9 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
     * positiver Offset = später senden
     * sinnvoller Bereich: ca. -500 ms bis +1000 ms
 * **Sammelfenster für gleichzeitige Szenen:** Mehrere Loxone-Kommandos werden kurz gesammelt und dann gebündelt an die Hue Bridge gesendet.
-* **Batch-Steuerung:** Mehrere Lampen werden in kleinen Gruppen nahezu parallel gesendet, ohne die Hue Bridge unnötig zu überlasten.
+* **Batch-Steuerung:** Lampen werden in logischen Blöcken seriell gesendet. Die globale Rate gilt auch innerhalb von Clustern, für Effekte und Wiederholungen.
 * **Einstellbares Hue-Limit:** Die maximale Anzahl Lichtbefehle pro Sekunde kann angepasst werden, um je nach Lampenanzahl das schnellste stabile Limit der eigenen Bridge zu finden.
-* **Timing-Test im UI:** Das Webinterface zeigt für die aktivierten Multi-Sync-Lampen Lampenanzahl, Mindestabstand, Cluster-Abstand, geplante Reihenfolge und effektive Befehlsrate.
+* **Timing-Test im UI:** Gemeinsame Berechnung mit dem Backend für Lampenanzahl, Mindestabstände, Reihenfolge und Planrate. Keine Messung der tatsächlichen Lampenreaktion.
 * **Queue-Bypass nur für Multi-Sync-Lampen:** Die bestehende Queue bleibt für normale Lampen erhalten. Nur Lampen mit aktivierter Mehrlampensynchronisierung nutzen den neuen Ablauf.
 * **Robuster SSE/EventStream Parser:** Behebt sporadische Fehler wie:
     * `Unexpected end of JSON input`
@@ -134,6 +134,33 @@ volumes:
 
 Für Docker/Portainer ist die im Beispiel gezeigte Volume-Zuordnung empfohlen, damit Konfiguration und Mappings bei Container-Neubau erhalten bleiben.
 
+### Einmaliges Update von Versionen mit versionierter Logdatenbank
+
+Vor dem ersten Update auf 2.5.11-dev den kompletten Datenordner sichern. Ältere Git-Stände verfolgen `data/logs.db`; beim Update wird diese Datei aus Git entfernt. Konfiguration und Mapping werden nicht entfernt. Das neue Docker-Image enthält ausschließlich Anwendungscode, keine lokalen Daten oder Backups.
+
+Für die Standardinstallation auf LoxBerry folgenden Block in Bash ausführen. Bei eigenem Volume-Pfad stattdessen diesen Datenordner sichern. Der Block bricht bei Fehlern ab; das Backup liegt außerhalb des Repositorys. Andere lokale Codeänderungen werden nicht verworfen.
+
+```bash
+(
+set -e
+cd /opt/loxberry/loxhuebridge_mehrlampensteuerung
+docker compose stop
+backup=$(mktemp -d /opt/loxberry/loxhuebridge-backup.XXXXXX)
+cp -a data "$backup/data"
+printf 'Datensicherung: %s\n' "$backup"
+if git ls-files --error-unmatch data/logs.db >/dev/null 2>&1; then
+    git restore --source=HEAD --worktree -- data/logs.db
+fi
+git pull --ff-only
+mkdir -p data
+cp -a "$backup/data/." data/
+docker compose up -d --build
+docker compose ps
+)
+```
+
+`git pull` aktualisiert den bereits ausgewählten Branch; es wechselt nicht automatisch zwischen `main` und `develop`. Scheitert das Update, bleibt die Sicherung erhalten. Vor einem erneuten Start die gesicherten Daten zurückspielen. Die Migration wird mit einem temporären Git-Repository getestet; ein Docker-Build ist eine separate Prüfung.
+
 ---
 
 ## Main oder Develop?
@@ -169,7 +196,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.10-dev
+Version: 2.5.11-dev
 ```
 
 ### Zurück auf main
@@ -267,6 +294,8 @@ Passwort wiederholen: ********
 
 Das Passwort wird nicht im Klartext gespeichert, sondern als Hash in `config.json`. Loxone-Steuer-URLs wie `/wohnzimmer/50` oder `/wohnzimmer/sunrise/30` bleiben bewusst ohne Auth erreichbar, damit bestehende virtuelle Ausgänge in Loxone weiter funktionieren.
 
+Die Passwortprüfung läuft asynchron mit höchstens zwei parallelen Berechnungen. Erfolgreiche Prüfungen werden höchstens 60 Sekunden in einem begrenzten Cache wiederverwendet; geänderte Zugangsdaten machen alte Berechtigungen ungültig. Nach zehn fehlgeschlagenen Versuchen innerhalb einer Minute wird die betreffende Quelladresse vorübergehend mit HTTP 429 gebremst. Diese HTTP-429-Antwort des Dashboards ist vom Hue-Rate-Limit im Lichtlog zu unterscheiden. Loxone-Steuerpfade bleiben davon ausgenommen.
+
 Der Zugriffsschutz ist für das lokale Netzwerk gedacht. Die Bridge sollte trotzdem nicht direkt aus dem Internet veröffentlicht werden.
 
 ---
@@ -304,7 +333,7 @@ Sync-Offset      = Feintuning pro einzelner Lampe
 | Bei unzuverlässiger Übertragung | Optionale Funkmaßnahme pro einzelner Lampe. Standard ist `Keine` |
 | Mehrlampensynchronisierung | Diese einzelne Lampe nimmt am gemeinsamen Sammel-/Timing-Ablauf teil |
 | Gruppe | Zuordnung zu Gruppe A-E. Die Gruppennamen können in den globalen Einstellungen frei benannt werden, z. B. Wohnzimmer, Büro oder Küche |
-| Ablauf-Cluster | Lampen mit gleichem Cluster innerhalb derselben Gruppe werden enger nacheinander geplant. Wenn leer, läuft die Lampe als Einzel-Cluster |
+| Ablauf-Cluster | Gleicher frei gewählter Name fasst Lampen innerhalb derselben Gruppe zusammen. Ohne Namen gilt die bekannte Hue-Device-Zuordnung, ansonsten die einzelne Light-UUID als Fallback |
 | Sync-Offset | Feinjustierung nur für diese Lampe. Negativ = früher, positiv = später |
 
 Den Sync-Offset erst nach einem Testlauf anpassen:
@@ -325,7 +354,9 @@ Die Funkmaßnahmen sind nur für einzelne Hue-Lampen gedacht, die sich im Zigbee
 | Einschalten aufteilen | Sendet bei `on=true` mit Zusatzwerten zuerst nur `on=true`, danach Helligkeit/Farbe/Farbtemperatur | Test für Lampen, die beim Einschalten kurz auf 0 % oder alter Helligkeit hängen |
 | Befehl wiederholen | Sendet denselben Befehl nach kurzer Verzögerung einmal erneut | Test für einzelne Funk-Aussetzer; nicht global aktivieren |
 
-Die drei Optionen schließen sich gegenseitig aus. Alte Nachprüfungen oder Wiederholungen werden verworfen, sobald ein neuerer Befehl für dieselbe Hue-UUID kommt. Dadurch soll eine späte Korrektur nicht versehentlich einen inzwischen gewünschten neuen Zustand überschreiben.
+Die drei Optionen schließen sich gegenseitig aus. Alte Nachprüfungen oder Wiederholungen werden verworfen, sobald ein neuerer Befehl für dieselbe Hue-UUID kommt. Gruppenbefehle unterbinden alte Nachsteuerungen ihrer bekannten Mitglieder. Ist die Mitgliedschaft noch nicht bekannt, werden vorsorglich alle ausstehenden Nachsteuerungen verworfen; normale Lampenbefehle bleiben erhalten.
+
+Die Zustandsprüfung erfolgt nach 15 bzw. 90 Sekunden, solange noch keine vollständige Bestätigung von Ein/Aus und angeforderter Helligkeit vorliegt. Nach einer Bestätigung wird nicht weiter korrigiert. Eine spätere Bedienung über Hue-App oder Schalter darf dadurch nicht wieder rückgängig gemacht werden. Änderungen vor der ersten Bestätigung lassen sich im SSE nicht sicher nach Verursacher unterscheiden. Die Prüfung verifiziert keine Farben und ist keine Garantie für die sichtbare Lichtwirkung.
 
 ### Gruppen und globale Multi-Sync Einstellungen
 
@@ -333,13 +364,13 @@ Die Werte können über das Webinterface angepasst werden:
 
 | Einstellung | Empfehlung | Erklärung |
 | --- | ---: | --- |
-| Max. Bridge-Befehle/s | 30 | Sicherheitsgrenze über alle Multi-Sync-Gruppen hinweg. Wichtig, wenn mehrere Räume gleichzeitig schalten |
+| Max. Bridge-Befehle/s | zunächst 10 | Harte Mindestpause für jeden tatsächlichen Hue-PUT, einschließlich Cluster, Effekte, Retries und Funkmaßnahmen. Bestehende Werte bleiben beim Update erhalten |
 | Gruppenname | Gruppe A-E | Frei benennbarer Anzeigename pro Gruppe |
 | Sammelfenster | 120 ms | Zeitfenster, in dem mehrere Loxone-Kommandos gesammelt werden |
 | Batchgröße | 4-10 | Anzahl Lampen pro logischem Block. Der Wert beeinflusst die zusätzliche Batch-Pause, die maximale Befehlsrate bleibt aber die wichtigste Grenze |
 | Batch-Pause | 30 ms | Zusätzliche Pause nach jedem Batch. Hilft, wenn die Bridge bei großen Gruppen kurz ins Stolpern kommt |
-| Max. Lichtbefehle/s | 10 | Limit der jeweiligen Gruppe. Für die eigene Bridge schrittweise erhöhen, z. B. 15, 20, 25/s |
-| Abstand im Ablauf-Cluster | 10 ms | Abstand zwischen Lampen mit gleichem Ablauf-Cluster. Niedrig halten für optisch zusammengehörige Lampen, zwischen Clustern gilt weiter `Max. Lichtbefehle/s` |
+| Max. Lichtbefehle/s | 10 | Bestimmt den Abstand zwischen unterschiedlichen Clustern der Gruppe. Innerhalb eines Clusters gilt der Cluster-Abstand, immer mindestens die globale Bridge-Pause |
+| Abstand im Ablauf-Cluster | 10 ms Sollwert | Wird automatisch auf mindestens `ceil(1000 / Max. Bridge-Befehle/s)` begrenzt. Beispielsweise sind bei global 20/s auch im Cluster mindestens 50 ms erforderlich |
 
 Es gibt fünf neutrale Gruppen A-E. Alte Installationen ohne Gruppenzuordnung laufen automatisch in Gruppe A weiter. Jede Gruppe hat eigene Timingwerte, zusätzlich begrenzt **Max. Bridge-Befehle/s** die Gesamtlast über alle Gruppen.
 
@@ -353,7 +384,7 @@ Gruppe Wohnzimmer
   Cluster Buddha: buddha_links, buddha_rechts
 ```
 
-Innerhalb eines Clusters werden die Befehle sehr eng geplant, z. B. mit 10 ms Abstand. Zwischen zwei Clustern bleibt der normale Abstand aus `Max. Lichtbefehle/s` aktiv. Die Hue Bridge bekommt weiterhin einzelne gültige `/resource/light/{uuid}`-Befehle; die Cluster-Logik verändert nur Reihenfolge und Timing in loxHueBridge.
+Cluster halten zusammengehörige Lampen in der Reihenfolge zusammen. Ein Cluster-Sollwert von 5 oder 10 ms umgeht die globale Grenze nicht; ein unkontrollierter Burst ist nicht vorgesehen. Zwischen zwei Clustern gilt zusätzlich der Abstand aus `Max. Lichtbefehle/s`. Die Hue Bridge bekommt weiterhin einzelne `/resource/light/{uuid}`-Befehle. Echte Gleichzeitigkeit oder identisches Flackern mehrerer Effekte wird nicht garantiert.
 
 ### Hue Effekte auf Gruppen, Räume und Zonen
 
@@ -413,27 +444,28 @@ Der Bereich **Timing-Test** im Webinterface simuliert den Ablauf je Gruppe für 
 | Anzeige | Bedeutung |
 | --- | --- |
 | aktive Lampen | Anzahl einzelner Hue-Lampen mit aktivierter Mehrlampensynchronisierung |
-| Mindestabstand | rechnerischer Abstand zwischen zwei REST-Befehlen, abgeleitet aus `Max. Lichtbefehle/s` |
-| im Cluster | kurzer Abstand zwischen zwei Lampen mit gleichem Ablauf-Cluster |
-| bis letzter Befehl | geschätzte Zeit vom Auslösen bis zum letzten gesendeten Lampenbefehl |
-| effektiv | effektive Befehlsrate des geplanten Ablaufs |
+| Mindestabstand | geplanter Abstand zwischen verschiedenen Clustern, mindestens die globale Bridge-Pause |
+| im Cluster | geplanter Abstand innerhalb eines Clusters, ebenfalls mindestens die globale Bridge-Pause |
+| Planzeit letzter Befehl | Sammelfenster plus Planzeit bis zum Start des letzten Befehls |
+| geplante Rate | rechnerische Rate zwischen erstem und letztem geplanten Start, kein gemessener Durchsatz |
 
-Die Detailzeilen der Vorschau zeigen zusätzlich Cluster, Lampenname, Offset und geplanten Zeitpunkt. So ist direkt sichtbar, ob z. B. `deckenlampe_top` und `deckenlampe_bottom` nur ca. 10 ms auseinander liegen.
+Die Detailzeilen zeigen Cluster, Lampenname, Offset und geplanten Zeitpunkt. Die Vorschau nimmt an, dass alle Befehle rechtzeitig im Sammelfenster eintreffen. Laufende Warteschlangen, andere Gruppen, langsame Bridge-Antworten und 429-Retries können den realen Ablauf verlängern.
 
-Beispiel mit 10 aktiven Lampen, `Sammelfenster 120 ms`, `Batchgröße 10`, `Batch-Pause 30 ms`, `Max. Lichtbefehle/s 10`: Der Mindestabstand zwischen verschiedenen Clustern beträgt 100 ms. Innerhalb eines Ablauf-Clusters kann der Abstand z. B. 10 ms betragen. Mit 20/s sinkt der Abstand zwischen Clustern auf 50 ms und derselbe Ablauf wirkt deutlich zeitnäher.
+Beispiel ohne Offsets: zehn Lampen, Sammelfenster 120 ms, Batchgröße 10 und globale sowie Gruppenrate 10/s ergeben mindestens 900 ms zwischen erstem und letztem Start, also etwa 1020 ms Planzeit insgesamt. Bei beiden Raten 20/s sind es etwa 570 ms. Die Antwortzeit wird nicht zusätzlich zur Rate-Pause addiert: Bei serieller Übertragung gilt mindestens das Maximum aus Antwortzeit und Sollabstand.
 
 ### Praxiswerte zum Finden des Limits
 
 Für 10-11 einzelne Lampen:
 
 ```text
-Start:       20/s
-Wenn stabil: 25/s
-Optional:    30/s
-Bei Problemen: zurück auf 20/s oder 15/s
+Start:       globale Rate 10/s, Gruppenrate 10/s, Offsets 0
+Wenn stabil: beide Raten schrittweise auf 12, 15, dann 20/s testen
+Bei Problemen: zum letzten stabilen Wert zurück, Funkmaßnahmen berücksichtigen
 ```
 
-Typische Zeichen für ein zu hohes Limit sind 429-Fehler im Log, einzelne Lampen reagieren spürbar später, Farben werden nicht sauber übernommen oder der EventStream meldet auffällig viele Folgeupdates. In diesem Fall `Max. Lichtbefehle/s` reduzieren oder die Batch-Pause erhöhen.
+Hue nennt ungefähr 10 Lichtbefehle/s und 1 Gruppenbefehl/s als Richtwerte. Die öffentliche Angabe verwendet ältere API-Ressourcenbezeichnungen und garantiert keine bestimmte V2-Leistung. Höhere Werte sind experimentell. Andere Anwendungen können zusätzlich Bridge-Kapazität verbrauchen. [Hue Support](https://developers.meethue.com/support/)
+
+Bei Hue-429, verspäteten Reaktionen oder nicht übernommenen Farben zuerst die globale Rate reduzieren. Cluster können den Gruppenabstand verkürzen, aber nicht die globale Grenze. Ein längeres Sammelfenster hilft beim Zusammenfassen von Szenenbefehlen, verzögert jedoch den Start. Es erhöht nicht die Bridge-Kapazität.
 
 ### Diagnose pro Lampe
 
@@ -449,6 +481,14 @@ Der Tab **Diagnose** enthält zusätzlich eine Zuverlässigkeitstabelle für Lam
 | Mapping | Loxone-/Hue-Zuordnung mit Device, Multi-Sync-Gruppe und Ablauf-Cluster |
 
 Diese Diagnose ersetzt keine echte Zigbee-Funkmessung, macht aber sichtbar, welche einzelne Lampe bei Szenen oder schnellen Farbwechseln auffällig reagiert.
+
+Ein erfolgreicher HTTP-PUT ist nur eine Annahme durch die Bridge, kein bestätigter Lampenzustand. Dashboard, UDP und MQTT erhalten Istwerte aus Hue-Abfragen bzw. SSE, nicht aus dem angeforderten Payload. Die Diagnose-API trennt `angefordert` und `angenommenAt` davon. Nicht leere Hue-`errors[]` gelten auch bei HTTP 200 als Fehler.
+
+### Automatisierte Prüfungen
+
+`npm ci` und danach `npm test` führen ausschließlich `test/*.test.js` aus. Die Tests verwenden temporäre Datenordner und simulierte Hue-Antworten, einschließlich echter lokaler HTTP-/Auth-/SSE-Laufwege und Prozess-Shutdown. Manuelle Netzwerkdiagnosen unter `tools/manual/` sind nicht Teil des Testlaufs. Vor einem Docker-Release laufen Tests und Dependency-Audit in CI. Entwicklungs-Tags erhalten kein `latest`-Image.
+
+Gespeichert wird über temporäre Dateien mit atomarem Austausch. Der gemeinsame Config-/Mapping-Restore verwendet zusätzlich ein Wiederherstellungsjournal; nach einem unterbrochenen Restore stellt der nächste Start beide vorherigen Dateien wieder her. Speicherfehler werden als Fehler an die UI zurückgegeben. Ein ungültiger Datenbestand wird nicht still durch eine leere Konfiguration ersetzt.
 
 ---
 

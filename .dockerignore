@@ -1,4 +1,17 @@
 node_modules
+data/
+data_backup*/
+backups/
+.codex/
+test/
+coverage/
+**/*.db
+**/*.db-*
+**/config.json
+**/mapping.json
+**/.env*
+*.tar.gz
+*.zip
 .git
 .gitignore
 *.log

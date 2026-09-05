@@ -10,6 +10,7 @@ const hueManager = require('./lib/hue');
 const loxoneManager = require('./lib/loxone');
 const routes = require('./lib/routes');
 const auth = require('./lib/auth');
+const lifecycle = require('./lib/lifecycle');
 
 console.log("🚀 [BOOT] loxHueBridge Prozess gestartet...");
 
@@ -42,8 +43,9 @@ logger.init(configManager.dataDir, configManager.config.disableLogDisk, configMa
 
 if (logger.dbError) logger.error(`DB Init fehlgeschlagen: ${logger.dbError}. RAM-Modus aktiv.`, 'SYSTEM');
 
+let mqttStartupTimer;
 if (configManager.isConfigured) {
-    setTimeout(() => mqttManager.connect(), 500);
+    mqttStartupTimer = setTimeout(() => mqttManager.connect(), 500);
 } else {
     logger.warn("Setup erforderlich. Bitte Dashboard öffnen.", 'SYSTEM');
 }
@@ -66,7 +68,7 @@ app.use('/', routes);
 
 const HTTP_PORT = parseInt(process.env.HTTP_PORT || "8555");
 const httpServer = app.listen(HTTP_PORT, () => {
-    console.log(`🚀 loxHueBridge Live auf ${HTTP_PORT}`); 
+    console.log(`🚀 loxHueBridge Live auf ${httpServer.address().port}`);
     if (configManager.isConfigured) hueManager.startEventStream(); 
 });
 
@@ -76,6 +78,7 @@ let shutdownStarted = false;
 function shutdown(signal) {
     if (shutdownStarted) return;
     shutdownStarted = true;
+    clearTimeout(mqttStartupTimer);
     logger.info(`${signal} empfangen, fahre herunter...`, 'SYSTEM');
 
     const closeLoggerAndExit = (code) => {
@@ -89,7 +92,7 @@ function shutdown(signal) {
     }, SHUTDOWN_TIMEOUT_MS);
     hardExitTimer.unref?.();
 
-    try { hueManager.stopEventStream?.(); } catch (e) { console.error('[SHUTDOWN] EventStream:', e.message); }
+    try { hueManager.close(); } catch (e) { console.error('[SHUTDOWN] Hue:', e.message); }
     try { mqttManager.close?.(); } catch (e) { console.error('[SHUTDOWN] MQTT:', e.message); }
     try { loxoneManager.close?.(); } catch (e) { console.error('[SHUTDOWN] UDP:', e.message); }
 
@@ -102,3 +105,4 @@ function shutdown(signal) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+lifecycle.on('shutdown', shutdown);
