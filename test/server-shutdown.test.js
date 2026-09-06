@@ -16,7 +16,7 @@ async function until(check, diagnostics = () => '') {
     }
 }
 
-async function fixture(t, enabled = true) {
+async function fixture(t, enabled = true, options = {}) {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'loxhue-http-'));
     const streams = new Set();
     const puts = [];
@@ -45,10 +45,11 @@ async function fixture(t, enabled = true) {
     fs.writeFileSync(path.join(temp, 'config.json'), JSON.stringify({
         bridgeIp: 'hue.test', appKey: 'test-key', loxoneIp: '127.0.0.1', loxonePort: 7000,
         authEnabled: enabled, authUser: 'admin', authPasswordHash: enabled ? 'pbkdf2$210000$' + salt + '$' + key.toString('hex') : '',
-        disableLogDisk: false, mqttEnabled: false, throttleTime: 0, transitionTime: 0
+        disableLogDisk: options.disableLogDisk === true, mqttEnabled: false, throttleTime: 0, transitionTime: 0
     }));
     fs.writeFileSync(path.join(temp, 'mapping.json'), JSON.stringify([
-        { hue_type: 'light', hue_uuid: 'test-light', loxone_name: 'test_lamp', sync_lox: false }
+        { hue_type: 'light', hue_uuid: 'test-light', loxone_name: 'test_lamp', sync_lox: false,
+            multi_sync: options.multiSync === true, multi_sync_group: 'a' }
     ]));
     const child = spawn(process.execPath, ['--require', path.join(__dirname, 'helpers/bridge-transport.cjs'), 'server.js'], {
         cwd: path.join(__dirname, '..'), windowsHide: true,
@@ -127,3 +128,40 @@ test('F15: ohne Schutz bleibt HTTP offen, Aktivierung ohne Passwort scheitert, S
     assert.match(app.output(), /SIGTERM empfangen/);
     await until(() => app.streams.size === 0);
 });
+
+for (const options of [{}, { multiSync: true }, { multiSync: true, disableLogDisk: true }]) {
+    test(`HTTP: Lampendiagnose ohne Debug und Logs nach UI-Speichern ${JSON.stringify(options)}`, { timeout: 20000 }, async t => {
+        const app = await fixture(t, true, options);
+        assert.equal((await (await app.request('/api/settings')).json()).debug, false);
+        assert.deepEqual(await (await app.request('/api/diagnostics/lampen')).json(), []);
+        assert.equal((await app.request('/test_lamp/80', {}, false)).status, 200);
+        await until(() => app.puts.length === 1, app.output);
+        let rows = await (await app.request('/api/diagnostics/lampen')).json();
+        assert.equal(rows.length, 1);
+        assert.equal(rows[0].befehle, 1, 'diagnostics must not depend on debug');
+        assert.equal(rows[0].uuid, 'test-light');
+        let logs = await (await app.request('/api/logs')).json();
+        assert.ok(!logs.some(row => row.level === 'DEBUG'));
+
+        const saved = await app.request('/api/setup/loxone', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ loxoneIp: '127.0.0.1', loxonePort: 7000, debug: true })
+        });
+        assert.equal(saved.status, 200);
+        assert.equal((await saved.json()).success, true);
+        assert.equal((await (await app.request('/api/settings')).json()).debug, true);
+        assert.equal((await app.request('/test_lamp/0', {}, false)).status, 200);
+        await until(() => app.puts.length === 2, app.output);
+        logs = await (await app.request('/api/logs?category=LIGHT')).json();
+        assert.ok(logs.some(row => row.level === 'DEBUG' && row.msg === 'IN: /test_lamp/0'));
+        assert.ok(logs.some(row => row.level === 'DEBUG' && row.msg.startsWith('OUT -> Hue (test_lamp):')));
+        rows = await (await app.request('/api/diagnostics/lampen')).json();
+        assert.equal(rows[0].befehle, 2);
+        for (const stream of app.streams) {
+            stream.write('data: [{"type":"update","data":[{"id":"test-light","on":{"on":false}}]}]\n\n');
+        }
+        await delay(100);
+        rows = await (await app.request('/api/diagnostics/lampen')).json();
+        assert.equal(rows[0].bestaetigt, 1);
+    });
+}

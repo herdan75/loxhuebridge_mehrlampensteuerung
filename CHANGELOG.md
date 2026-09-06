@@ -1,3 +1,11 @@
+## [2.5.12-dev] - 2026-09-06
+### Korrekturen
+- Serverlog aktualisiert auch Einträge mit gleich langer, aber geänderter Meldung oder Uhrzeit.
+
+### Prüfungen
+- Regressionstests für die Loganzeige und HTML-Maskierung ergänzt.
+- HTTP-Integrationstests prüfen Lampendiagnose ohne Debug sowie Debug-Aktivierung zur Laufzeit für Einzelbefehle und Multi-Sync, mit SQLite- und RAM-Logs.
+
 ## [2.5.11-dev] - In Entwicklung
 ### Korrekturen
 - Globale Bridge-Rate für jeden tatsächlichen PUT durchgesetzt, auch innerhalb von Clustern, für Effekte und Retries.

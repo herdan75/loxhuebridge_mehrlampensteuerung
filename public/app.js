@@ -345,7 +345,7 @@
                 `<span style="color:#ddd; white-space: pre-wrap;">${msg}</span>` +
             `</div>`;
         }).join('');
-        if(consoleDiv.innerHTML.length !== html.length) consoleDiv.innerHTML = html;
+        if(consoleDiv.innerHTML !== html) consoleDiv.innerHTML = html;
     }
 
     function renderMappings() {

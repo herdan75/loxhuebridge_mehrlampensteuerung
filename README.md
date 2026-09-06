@@ -10,7 +10,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.11-dev Mehrlampensteuerung
+## 🚀 Features V2.5.12-dev Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
@@ -136,7 +136,7 @@ Für Docker/Portainer ist die im Beispiel gezeigte Volume-Zuordnung empfohlen, d
 
 ### Einmaliges Update von Versionen mit versionierter Logdatenbank
 
-Vor dem ersten Update auf 2.5.11-dev den kompletten Datenordner sichern. Ältere Git-Stände verfolgen `data/logs.db`; beim Update wird diese Datei aus Git entfernt. Konfiguration und Mapping werden nicht entfernt. Das neue Docker-Image enthält ausschließlich Anwendungscode, keine lokalen Daten oder Backups.
+Vor dem ersten Update von einem Stand mit versionierter Logdatenbank auf 2.5.11-dev oder neuer (einschließlich 2.5.12 auf `main`) den kompletten Datenordner sichern. Ältere Git-Stände verfolgen `data/logs.db`; beim Update wird diese Datei aus Git entfernt. Konfiguration und Mapping werden nicht entfernt. Das neue Docker-Image enthält ausschließlich Anwendungscode, keine lokalen Daten oder Backups.
 
 Für die Standardinstallation auf LoxBerry folgenden Block in Bash ausführen. Bei eigenem Volume-Pfad stattdessen diesen Datenordner sichern. Der Block bricht bei Fehlern ab; das Backup liegt außerhalb des Repositorys. Andere lokale Codeänderungen werden nicht verworfen.
 
@@ -167,10 +167,10 @@ docker compose ps
 
 Dieses Repository verwendet zwei Branches:
 
-| Branch | Zweck |
-| --- | --- |
-| `main` | Stabiler Stand für den normalen Betrieb, inkl. Mehrlampengruppen und Effekt-Fallback |
-| `develop` | Test-/Weiterentwicklungsstand für neue Funktionen vor der Übernahme nach `main` |
+| Branch | Version | Zweck |
+| --- | --- | --- |
+| `main` | `2.5.12` | Stabiler Stand für den normalen Betrieb, inkl. Mehrlampengruppen, Ablauf-Clustern, Effekt-Fallback und Stabilitätskorrekturen |
+| `develop` | `2.5.12-dev` | Weiterentwicklungsstand, aktuell mit demselben Anwendungscode wie `main`; künftige Änderungen werden zuerst hier getestet |
 
 Wenn kein Branch angegeben wird, wird normalerweise `main` installiert. Das ist die empfohlene Variante für den normalen Betrieb.
 
@@ -196,18 +196,22 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.11-dev
+Version: 2.5.12-dev
 ```
 
 ### Zurück auf main
 
+Bei einer alten Installation zunächst die oben beschriebene Datensicherung durchführen. Ein Branchwechsel allein aktualisiert keinen laufenden Container.
+
 ```bash
 cd loxhuebridge_mehrlampensteuerung
+git fetch origin
 git checkout main
-git pull
-docker compose down
+git pull --ff-only origin main
 docker compose up -d --build
 ```
+
+Danach zeigt **System** die Version `2.5.12` ohne `-dev` an.
 
 ---
 
@@ -614,4 +618,4 @@ Bei erfolgreichem SSE-Fix sollten die bisherigen EventStream-JSON-Fehler nicht m
 
 **#kiassisted** 🤖
 
-Dieser Entwicklungsstand beschreibt die hier gepflegte Version mit Mehrlampensynchronisierung, Hue Effekt-Fallback, robuster SSE/EventStream-Verarbeitung und erweiterten Diagnosefunktionen.
+Diese Dokumentation beschreibt die hier gepflegte Version mit Mehrlampensynchronisierung, Hue Effekt-Fallback, robuster SSE/EventStream-Verarbeitung und erweiterten Diagnosefunktionen.
