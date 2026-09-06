@@ -1,4 +1,8 @@
-## [2.5.12-dev] - 2026-09-06
+## [2.5.12] - 2026-09-06
+### Veröffentlichung
+- Aktuellen Entwicklungsstand auf `main` übernommen, einschließlich Ablauf-Clustern, Lampendiagnose, Funkmaßnahmen und der unten dokumentierten Stabilitäts- und Sicherheitskorrekturen.
+- Anwendungscode entspricht `2.5.12-dev`; die stabile Version wird ohne `-dev` angezeigt. README unterscheidet beide Branches und beschreibt die einmalige Sicherung beim Update älterer Installationen.
+
 ### Korrekturen
 - Serverlog aktualisiert auch Einträge mit gleich langer, aber geänderter Meldung oder Uhrzeit.
 

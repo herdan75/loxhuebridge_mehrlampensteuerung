@@ -10,7 +10,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.12-dev Mehrlampensteuerung
+## 🚀 Features V2.5.12 Mehrlampensteuerung
 
 ### Neu in diesem Fork
 
