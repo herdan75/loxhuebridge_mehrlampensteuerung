@@ -1,3 +1,29 @@
+## [2.5.13-dev] - 2026-09-13
+### Sicherheit und Befehlsreihenfolge
+- Aktivierter Zugriffsschutz bleibt auch bei unvollständiger Konfiguration erhalten; leere Loxone-Adressen werden beim Speichern abgelehnt.
+- Einstellungen, Geräte-Metadaten und Diagnosewerte werden im Webinterface kontextgerecht maskiert.
+- Gruppenbefehle, Effekte und Alles-Sequenzen berücksichtigen die ursprüngliche Eingangsreihenfolge. Ältere Puffer, Timer und Retries überschreiben keine neueren Mitgliedsbefehle.
+- Native Gruppenbefehle werden bei zwischenzeitlich abweichenden Einzelbefehlen nur noch auf die nicht überholten Mitglieder verteilt. Unauflösbare Gruppen werden mit Fehler abgelehnt.
+- Gemeinsame Mapping-Validierung für Speichern und Restore: eindeutige URL-Namen, Ressourcentypen und widerspruchsfreie Funkmaßnahmen; Global-Mapping ausdrücklich zugelassen.
+
+### Timing und Diagnose
+- Batch-Pausen bleiben auch mit Ablauf-Clustern wirksam. Batchgröße zählt Lampen; Cluster bleiben ungeteilt.
+- Bestätigungen und Widersprüche werden einmal pro logischem Befehl gezählt. Bereits bestätigte Befehle und Übergangszwischenstände erzeugen keine weiteren Fehlzählungen; Kommunikationsfehler bleiben separat.
+- Bekannte Gerätefähigkeiten begrenzen Farb-, Farbtemperatur- und Dimmparameter. Unbekannte Fähigkeiten werden nicht als reine Schaltgeräte interpretiert.
+- Batterieereignisse aktualisieren alle zugehörigen Geräte-Mappings.
+- Laufende SQLite-Lese-/Schreibfehler schalten auf begrenzte RAM-Logs um und werden im Systembereich angezeigt.
+- Veraltete MQTT-Clients beeinflussen neue Verbindungen nicht; unveränderte Verbindungsdaten lösen keinen Neuaufbau aus. Passwörter werden unverändert übergeben.
+
+### Bedienung
+- Setup meldet Speicherfehler und ermöglicht einen erneuten Versuch statt falscher Erfolgsmeldung.
+- Regler und Zahlenfelder verwenden dieselben Wertebereiche wie das Backend; gültige gespeicherte Werte werden nicht mehr durch engere UI-Grenzen verändert.
+- Allgemeine Einstellungen und Zugriffsschutz werden getrennt gespeichert, ohne andere Entwürfe zu verlieren. Ungespeicherte Änderungen werden beim Verlassen berücksichtigt.
+- Diagnose auf kleinen Bildschirmen scrollbar, neutrale Flächen im Dark Mode lesbar, Navigation und Gerätedetails per Tastatur bedienbar.
+
+### Prüfungen
+- Regressionstests für Sicherheitsgrenzen, Gruppenauflösung, überlappende Gruppen, 429-Retry, Alles-Reihenfolge, Cluster-Pausen, Diagnose, Mapping, MQTT und UI ergänzt.
+- Lokale Browserprüfung mit simulierten API-Antworten für Desktop/Mobil, Dark Mode, Speichern und Tastaturbedienung. Kein Nachweis der tatsächlichen Zigbee-Reaktionszeiten.
+
 ## [2.5.12-dev] - 2026-09-06
 ### Korrekturen
 - Serverlog aktualisiert auch Einträge mit gleich langer, aber geänderter Meldung oder Uhrzeit.

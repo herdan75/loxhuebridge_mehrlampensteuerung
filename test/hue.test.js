@@ -447,7 +447,7 @@ test('Hue communication_error wird trotz data[] als Diagnosefehler gezählt', ()
 
     const diag = getLampDiagnostics().find(row => row.uuid === 'light-1');
     assert.strictEqual(diag.communicationErrors, 1);
-    assert.strictEqual(diag.widersprueche, 1);
+    assert.strictEqual(diag.widersprueche, 0);
     assert.match(diag.letzterFehler, /communication_error/);
 });
 
@@ -458,7 +458,7 @@ test('Lampendiagnose bestätigt erwartete Events mit Helligkeitstoleranz', () =>
 
     const diag = getLampDiagnostics().find(row => row.uuid === 'light-1');
     assert.strictEqual(diag.befehle, 1);
-    assert.strictEqual(diag.bestaetigt, 2);
+    assert.strictEqual(diag.bestaetigt, 1);
     assert.strictEqual(diag.widersprueche, 0);
 });
 
@@ -468,8 +468,31 @@ test('Lampendiagnose erkennt Event-Widerspruch', () => {
     recordLampEvent('light-1', { id: 'light-1', on: { on: false }, dimming: { brightness: 20 } });
 
     const diag = getLampDiagnostics().find(row => row.uuid === 'light-1');
-    assert.strictEqual(diag.widersprueche, 2);
+    assert.strictEqual(diag.widersprueche, 1);
     assert.match(diag.letzterWiderspruch.gemeldet, /bri=20/);
+});
+
+test('Review F06: Bestaetigte Befehle werden durch Wiederholung und externe Bedienung nicht doppelt gezaehlt', () => {
+    resetLampDiagnosticsForTests();
+    const payload = { on: { on: true }, dimming: { brightness: 80 } };
+    recordLampCommand('diag-review', 'diag', payload, 1);
+    recordLampEvent('diag-review', payload);
+    recordLampCommand('diag-review', 'diag', payload, 1, true);
+    recordLampEvent('diag-review', payload);
+    recordLampEvent('diag-review', { on: { on: false } });
+    const metric = getLampDiagnostics()[0];
+    assert.strictEqual(metric.befehle, 1);
+    assert.strictEqual(metric.bestaetigt, 1);
+    assert.strictEqual(metric.widersprueche, 0);
+});
+
+test('Review F06: Zwischenstaende einer Transition sind keine Befehlsfehler', () => {
+    resetLampDiagnosticsForTests();
+    recordLampCommand('diag-transition', 'diag', { on: { on: true }, dimming: { brightness: 80 }, dynamics: { duration: 1000 } }, 1);
+    recordLampEvent('diag-transition', { on: { on: true }, dimming: { brightness: 20 } });
+    assert.strictEqual(getLampDiagnostics()[0].widersprueche, 0);
+    recordLampEvent('diag-transition', { dimming: { brightness: 80 } });
+    assert.strictEqual(getLampDiagnostics()[0].bestaetigt, 1);
 });
 
 test('split_on teilt nur Einschaltbefehle mit Zusatzfeldern', async () => {
@@ -618,7 +641,11 @@ test('F04: Raum-Aus verwirft alte Lampen-Nachsteuerungen', async () => {
     axiosGetResponses.length = 0;
     const entry = { hue_uuid: 'f04-light', hue_type: 'light', loxone_name: 'f04', verify_state: true };
     configManager.mapping = [entry];
-    axiosGetResponses.push({ data: { data: [{ on: { on: false }, dimming: { brightness: 80 } }] } });
+    axiosGetResponses.push(
+        { data: { data: [{ services: [{ rid: 'f04-room', rtype: 'grouped_light' }], children: [{ rid: 'f04-device', rtype: 'device' }] }] } },
+        { data: { data: [] } },
+        { data: { data: [{ id: 'f04-device', services: [{ rid: 'f04-light', rtype: 'light' }] }] } }
+    );
     await hueManager.executeCommand(entry, '80');
     await hueManager.executeCommand({ hue_uuid: 'f04-room', hue_type: 'group', loxone_name: 'room' }, '0');
     await wait(100);
@@ -1055,6 +1082,55 @@ test('executeCommand laesst Aus bei Wert 0 unveraendert', async () => {
 });
 
 // --- Mehrlampensynchronisierung ---
+test('Review F11: Batterie-SSE aktualisiert alle Tasten desselben Geraets', async () => {
+    const { PassThrough } = require('node:stream');
+    const stream = new PassThrough();
+    configManager.isConfigured = true;
+    configManager.mapping = [
+        { hue_uuid: 'battery-button-1', loxone_name: 'button_one', hue_type: 'button', sync_lox: false },
+        { hue_uuid: 'battery-button-2', loxone_name: 'button_two', hue_type: 'button', sync_lox: false }
+    ];
+    configManager.statusCache = {};
+    axiosGetResponses.length = 0;
+    axiosGetResponses.push({ data: { data: [{ id: 'remote-battery', services: [
+        { rid: 'battery-button-1', rtype: 'button' }, { rid: 'battery-button-2', rtype: 'button' }, { rid: 'battery-power', rtype: 'device_power' }
+    ] }] } });
+    axiosStreamResponses.push({ data: stream });
+    await hueManager.startEventStream();
+    stream.write('data: [{"type":"update","data":[{"id":"battery-power","power_state":{"battery_level":10}}]}]\n\n');
+    await wait(10);
+    hueManager.stopEventStream();
+    assert.strictEqual(configManager.statusCache.button_one.bat, 10);
+    assert.strictEqual(configManager.statusCache.button_two.bat, 10);
+});
+
+test('Review F07: Reine Dimmer und Schaltsteckdosen erhalten nur unterstuetzte Felder', async () => {
+    resetHueSchedulerForTests();
+    setFastMultiSyncConfig();
+    configManager.isConfigured = true;
+    hueManager.HUE_RESOURCE_DELAYS.light.delayMs = 0;
+    axiosGetResponses.length = 0;
+    axiosGetResponses.push({ data: { data: [] } }, { data: { data: [
+        { id: 'review-dimmer', dimming: { brightness: 50 } }, { id: 'review-plug' }
+    ] } });
+    await hueManager.buildDeviceMap();
+    axiosPutCalls.length = 0;
+    await hueManager.executeCommand({ hue_uuid: 'review-dimmer', hue_type: 'light', loxone_name: 'dimmer' }, '50050050');
+    await hueManager.executeCommand({ hue_uuid: 'review-plug', hue_type: 'light', loxone_name: 'plug' }, '50050050', 500);
+    assert.deepStrictEqual(axiosPutCalls[0].payload, { on: { on: true }, dimming: { brightness: 50 } });
+    assert.deepStrictEqual(axiosPutCalls[1].payload, { on: { on: true } });
+});
+
+test('Review F05: Batch-Pause bleibt zwischen Clustern auch unter Queue-Last erhalten', () => {
+    const items = Array.from({ length: 10 }, (_, i) => ({ entry: { hue_uuid: `batch-${i}`, sync_cluster: `cluster-${Math.floor(i / 2)}` } }));
+    const settings = { batchSize: 4, maxCommandsPerSecond: 10, sameClusterSpacingMs: 10, bridgeMaxCommandsPerSecond: 20 };
+    const normal = buildMultiSyncSchedule(items, { ...settings, batchDelayMs: 0 });
+    const paused = buildMultiSyncSchedule(items, { ...settings, batchDelayMs: 30 });
+    assert.deepStrictEqual(paused.map(s => s.delayMs), [0, 50, 150, 200, 330, 380, 480, 530, 660, 710]);
+    assert.strictEqual(paused[3].schedulerSpacingMs, 130);
+    assert.strictEqual(paused.at(-1).delayMs - normal.at(-1).delayMs, 60);
+});
+
 test('Multi-Sync Scheduler respektiert maximale Hue Befehlsrate', () => {
     const items = Array.from({ length: 11 }, (_, index) => ({
         entry: { loxone_name: `lampe_${index}`, sync_offset_ms: 0 }

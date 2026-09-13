@@ -71,17 +71,26 @@ test('Auth erlaubt korrekte Basic Auth mit Benutzername und Passwort-Hash', asyn
     })), false);
 });
 
-test('Auth nimmt Setup vor Erstkonfiguration und Loxone-Steuer-URLs aus', () => {
+test('Aktiver Schutz bleibt auch bei unvollstaendiger Konfiguration erhalten', () => {
     configManager.config.authToken = 'secret';
     configManager.config.authEnabled = true;
     configManager.isConfigured = false;
-    assert.strictEqual(auth._internals.needsAuth(req('/')), false);
-    assert.strictEqual(auth._internals.needsAuth(req('/app.js')), false);
+    for (const path of ['/', '/app.js', '/setup.html', '/api/setup/register', '/api/system/backup', '/api/settings']) {
+        assert.strictEqual(auth._internals.needsAuth(req(path)), true, path);
+    }
 
     configManager.isConfigured = true;
     assert.strictEqual(auth._internals.needsAuth(req('/wohnzimmer/50')), false);
     assert.strictEqual(auth._internals.needsAuth(req('/wohnzimmer/sunrise/30')), false);
     assert.strictEqual(auth._internals.needsAuth(req('/')), true);
+});
+
+test('Frisches Setup ohne aktivierten Schutz bleibt erreichbar', () => {
+    configManager.config.authEnabled = false;
+    configManager.config.authToken = '';
+    configManager.isConfigured = false;
+    assert.strictEqual(auth._internals.needsAuth(req('/')), false);
+    assert.strictEqual(auth._internals.needsAuth(req('/api/setup/loxone', { method: 'POST' })), false);
 });
 
 test('Auth Middleware blockiert Dashboard/API und lässt Loxone-Steuerpfade offen', async () => {
@@ -152,4 +161,27 @@ test('F10: Fehlversuche sind begrenzt und sperren keine Loxone-Steuerpfade', asy
     let passed = false;
     await auth.requireAuth(req('/lampe/1'), res, () => { passed = true; });
     assert.ok(passed);
+});
+
+test('Review F01 HTTP: Unvollstaendiges Setup gibt kein Backup ohne Anmeldung frei', async () => {
+    const express = require('express');
+    const app = express();
+    configManager.isConfigured = false;
+    configManager.config.authEnabled = true;
+    configManager.config.authToken = 'local-test-token';
+    app.use(auth.requireAuth);
+    app.get('/api/system/backup', (_req, res) => res.json({ appKey: 'test-only-secret' }));
+    const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+    try {
+        const url = `http://127.0.0.1:${server.address().port}/api/system/backup`;
+        const denied = await fetch(url);
+        assert.strictEqual(denied.status, 401);
+        assert.ok(!(await denied.text()).includes('test-only-secret'));
+        const allowed = await fetch(url, { headers: { Authorization: 'Bearer local-test-token' } });
+        assert.strictEqual(allowed.status, 200);
+        assert.strictEqual((await allowed.json()).appKey, 'test-only-secret');
+    } finally {
+        await new Promise(resolve => server.close(resolve));
+        configManager.config.authToken = '';
+    }
 });

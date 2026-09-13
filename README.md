@@ -10,7 +10,14 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.12-dev Mehrlampensteuerung
+## 🚀 Features V2.5.13-dev Mehrlampensteuerung
+
+### Änderungen in 2.5.13-dev
+
+- Zugriffsschutz bleibt bei unvollständiger Einrichtung wirksam; gespeicherte Texte werden sicher dargestellt.
+- Neuere Anforderungen gewinnen auch bei überlappenden Hue-Gruppen, verzögerter Mitgliederauflösung und Retries. Der gemeinsame Scheduler und die fünf Multi-Sync-Gruppen bleiben erhalten.
+- Wirksame Cluster-/Batch-Pausen, Befehlsdiagnose ohne Feld-Mehrfachzählung, geräteweite Batterieupdates und RAM-Fallback bei laufenden Log-Datenbankfehlern.
+- Exakte Zahlenfelder, getrennte Speicheraktionen, Schutz vor versehentlichem Verwerfen, mobile Diagnosetabellen und Tastaturbedienung.
 
 ### Neu in diesem Fork
 
@@ -33,7 +40,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 * **Batch-Steuerung:** Lampen werden in logischen Blöcken seriell gesendet. Die globale Rate gilt auch innerhalb von Clustern, für Effekte und Wiederholungen.
 * **Einstellbares Hue-Limit:** Die maximale Anzahl Lichtbefehle pro Sekunde kann angepasst werden, um je nach Lampenanzahl das schnellste stabile Limit der eigenen Bridge zu finden.
 * **Timing-Test im UI:** Gemeinsame Berechnung mit dem Backend für Lampenanzahl, Mindestabstände, Reihenfolge und Planrate. Keine Messung der tatsächlichen Lampenreaktion.
-* **Queue-Bypass nur für Multi-Sync-Lampen:** Die bestehende Queue bleibt für normale Lampen erhalten. Nur Lampen mit aktivierter Mehrlampensynchronisierung nutzen den neuen Ablauf.
+* **Gemeinsame Warteschlange:** Alle Hue-PUTs laufen durch denselben Scheduler und die globale Begrenzung. Multi-Sync-Lampen verwenden ihren Gruppen-/Cluster-Zeitplan; normale Einzel- und Gruppenbefehle ihre reguläre Drosselung.
 * **Robuster SSE/EventStream Parser:** Behebt sporadische Fehler wie:
     * `Unexpected end of JSON input`
     * `Unterminated string in JSON`
@@ -64,7 +71,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 * **Backup & Restore:** Lade deine komplette Konfiguration inkl. Mappings als Backup herunter und stelle sie bei Bedarf wieder her. Zusätzlich gibt es ein Backup ohne Zugangsdaten, bei dem Hue App-Key, MQTT-Passwort und Auth-Token maskiert werden.
 * **Loxone Integration:** Schalten, Dimmen, Warmweiß, RGB sowie Rückmeldungen via UDP.
 * **MQTT Support:** Sendet Statusänderungen parallel an einen MQTT Broker.
-* **Stabilität:** Watchdog, Queue und Rate-Limiting verhindern Überlastung der Bridge.
+* **Stabilität:** Watchdog, Queue und Rate-Limiting begrenzen die Last. Zu hohe Einstellungen oder weitere Hue-Clients können trotzdem zu Überlastung und HTTP 429 führen.
 * 🎛️ **Individuelle Geräte-Steuerung:** Detaillierte Einstellungen pro Gerät direkt im UI.
 
 ---
@@ -170,7 +177,7 @@ Dieses Repository verwendet zwei Branches:
 | Branch | Version | Zweck |
 | --- | --- | --- |
 | `main` | `2.5.12` | Stabiler Stand für den normalen Betrieb, inkl. Mehrlampengruppen, Ablauf-Clustern, Effekt-Fallback und Stabilitätskorrekturen |
-| `develop` | `2.5.12-dev` | Weiterentwicklungsstand, aktuell mit demselben Anwendungscode wie `main`; künftige Änderungen werden zuerst hier getestet |
+| `develop` | `2.5.13-dev` | Weiterentwicklungsstand mit zusätzlichen Sicherheits-, Reihenfolge-, Diagnose- und Bedienungskorrekturen; noch nicht in `main` enthalten |
 
 Wenn kein Branch angegeben wird, wird normalerweise `main` installiert. Das ist die empfohlene Variante für den normalen Betrieb.
 
@@ -196,7 +203,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.12-dev
+Version: 2.5.13-dev
 ```
 
 ### Zurück auf main
@@ -302,13 +309,21 @@ Die Passwortprüfung läuft asynchron mit höchstens zwei parallelen Berechnunge
 
 Der Zugriffsschutz ist für das lokale Netzwerk gedacht. Die Bridge sollte trotzdem nicht direkt aus dem Internet veröffentlicht werden.
 
+Der aktivierte Schutz gilt auch bei unvollständigen Bridge-/Loxone-Einstellungen und für den Einrichtungsassistenten. Eine leere Loxone-Adresse kann den Schutz nicht aufheben. Ein wirklich frisches Setup ohne Passwort oder Umgebungs-Token bleibt offen.
+
+**Zugriffsschutz speichern** speichert nur diesen Bereich. **Allgemeine Einstellungen speichern** speichert die übrigen Systemwerte einschließlich MQTT. Ungespeicherte Eingaben im jeweils anderen Bereich bleiben erhalten. Beim Verlassen erscheint eine Rückfrage; nach einem Speicherfehler bleibt der Entwurf zur Korrektur erhalten.
+
 ---
 
 ## 💡 Mehrlampensynchronisierung verwenden
 
 Die Mehrlampensynchronisierung wird **pro einzelner Hue-Lampe** aktiviert. Nur Lampen mit aktivierter Option **Mehrlampensynchronisierung** laufen bei normalen Schalt-, Dimm- und Farbwerten in den gemeinsamen Sammel-/Timing-Ablauf.
 
-Hue Gruppen, Räume und Zonen werden bei normalen numerischen Befehlen weiterhin direkt über `grouped_light` gesteuert. Bei Hue Effekten ist das anders: Da die Hue API v2 Effekte wie `candle` oder `fire` nur am Endpunkt `light` akzeptiert, löst loxHueBridge Gruppen/Räume/Zonen für Effektbefehle automatisch in einzelne Lampen auf.
+Hue Gruppen, Räume und Zonen werden bei normalen numerischen Befehlen grundsätzlich über `grouped_light` gesteuert. Ihre Mitglieder werden vorher ermittelt, damit ältere Einzelbefehle aus Puffern, Timern und Retries nicht später wieder einschalten. Bei fehlendem oder abgelaufenem Mitgliedercache ist dafür eine Ressourcenabfrage nötig; dieser erste Aufruf kann länger dauern. Unauflösbare Gruppen werden mit einem Fehler abgelehnt, statt unbekannte Mitglieder zu überschreiben.
+
+Trifft während der Auflösung oder Wartezeit ein neuerer Befehl für ein Mitglied ein, wird kein veralteter Gruppen-PUT mehr gesendet. Stattdessen erhalten nur noch die nicht überholten Mitglieder den älteren Auftrag als Einzelbefehle. Das kann zusätzliche Requests und Zeit benötigen, schützt aber die zuletzt gewünschten Zustände. Bereits an die Bridge übertragene Befehle lassen sich nicht zurücknehmen.
+
+Effekte wie `candle` oder `fire` werden im bestehenden Gruppen-/Raum-/Zonen-Fallback weiterhin an einzelne `light`-Ressourcen verteilt. Bekannte Gerätefähigkeiten begrenzen normale Farb-/Dimmparameter. Für unbekannte Fähigkeiten bleibt das bisherige Verhalten erhalten; bei nativen gemischten Gruppen entscheidet die Hue Bridge über die Umsetzung je Lampe.
 
 Empfohlene Einstellung für Ambient-Szenen mit mehreren einzelnen Hue-Lampen:
 
@@ -358,9 +373,9 @@ Die Funkmaßnahmen sind nur für einzelne Hue-Lampen gedacht, die sich im Zigbee
 | Einschalten aufteilen | Sendet bei `on=true` mit Zusatzwerten zuerst nur `on=true`, danach Helligkeit/Farbe/Farbtemperatur | Test für Lampen, die beim Einschalten kurz auf 0 % oder alter Helligkeit hängen |
 | Befehl wiederholen | Sendet denselben Befehl nach kurzer Verzögerung einmal erneut | Test für einzelne Funk-Aussetzer; nicht global aktivieren |
 
-Die drei Optionen schließen sich gegenseitig aus. Alte Nachprüfungen oder Wiederholungen werden verworfen, sobald ein neuerer Befehl für dieselbe Hue-UUID kommt. Gruppenbefehle unterbinden alte Nachsteuerungen ihrer bekannten Mitglieder. Ist die Mitgliedschaft noch nicht bekannt, werden vorsorglich alle ausstehenden Nachsteuerungen verworfen; normale Lampenbefehle bleiben erhalten.
+Die drei Optionen schließen sich gegenseitig aus. Alte Nachprüfungen oder Wiederholungen werden verworfen, sobald ein neuerer Befehl für dieselbe Hue-UUID kommt. Gruppenbefehle lösen ihre Mitglieder auf und annullieren deren ältere Befehle und Nachsteuerungen. Unbeteiligte Lampen bleiben unverändert. Ist die Mitgliedschaft nicht auflösbar, wird der Gruppenbefehl abgelehnt; es werden nicht pauschal Nachsteuerungen anderer Lampen verworfen.
 
-Die Zustandsprüfung erfolgt nach 15 bzw. 90 Sekunden, solange noch keine vollständige Bestätigung von Ein/Aus und angeforderter Helligkeit vorliegt. Nach einer Bestätigung wird nicht weiter korrigiert. Eine spätere Bedienung über Hue-App oder Schalter darf dadurch nicht wieder rückgängig gemacht werden. Änderungen vor der ersten Bestätigung lassen sich im SSE nicht sicher nach Verursacher unterscheiden. Die Prüfung verifiziert keine Farben und ist keine Garantie für die sichtbare Lichtwirkung.
+Die Zustandsprüfung erfolgt nach 15 bzw. 90 Sekunden, frühestens nach Ende der angeforderten Übergangszeit, solange noch keine vollständige Bestätigung von Ein/Aus und angeforderter Helligkeit vorliegt. Nach einer Bestätigung wird nicht weiter korrigiert. Eine spätere Bedienung über Hue-App oder Schalter darf dadurch nicht wieder rückgängig gemacht werden. Änderungen vor der ersten Bestätigung lassen sich im SSE nicht sicher nach Verursacher unterscheiden. Die Prüfung verifiziert keine Farben und ist keine Garantie für die sichtbare Lichtwirkung.
 
 ### Gruppen und globale Multi-Sync Einstellungen
 
@@ -371,12 +386,16 @@ Die Werte können über das Webinterface angepasst werden:
 | Max. Bridge-Befehle/s | zunächst 10 | Harte Mindestpause für jeden tatsächlichen Hue-PUT, einschließlich Cluster, Effekte, Retries und Funkmaßnahmen. Bestehende Werte bleiben beim Update erhalten |
 | Gruppenname | Gruppe A-E | Frei benennbarer Anzeigename pro Gruppe |
 | Sammelfenster | 120 ms | Zeitfenster, in dem mehrere Loxone-Kommandos gesammelt werden |
-| Batchgröße | 4-10 | Anzahl Lampen pro logischem Block. Der Wert beeinflusst die zusätzliche Batch-Pause, die maximale Befehlsrate bleibt aber die wichtigste Grenze |
-| Batch-Pause | 30 ms | Zusätzliche Pause nach jedem Batch. Hilft, wenn die Bridge bei großen Gruppen kurz ins Stolpern kommt |
+| Batchgröße | 4-10 | Zählt Lampen, nicht Cluster. Ein Ablauf-Cluster bleibt ungeteilt; passt er nicht mehr in den Batch, beginnt er im nächsten. Ein einzelner größerer Cluster darf die Batchgröße überschreiten |
+| Batch-Pause | 30 ms | Zusätzliche Pause vor dem nächsten Batch, auch bei Clustern. Kein Zuschlag nach dem letzten Batch. Die globale Mindestpause gilt weiterhin |
 | Max. Lichtbefehle/s | 10 | Bestimmt den Abstand zwischen unterschiedlichen Clustern der Gruppe. Innerhalb eines Clusters gilt der Cluster-Abstand, immer mindestens die globale Bridge-Pause |
 | Abstand im Ablauf-Cluster | 10 ms Sollwert | Wird automatisch auf mindestens `ceil(1000 / Max. Bridge-Befehle/s)` begrenzt. Beispielsweise sind bei global 20/s auch im Cluster mindestens 50 ms erforderlich |
 
 Es gibt fünf neutrale Gruppen A-E. Alte Installationen ohne Gruppenzuordnung laufen automatisch in Gruppe A weiter. Jede Gruppe hat eigene Timingwerte, zusätzlich begrenzt **Max. Bridge-Befehle/s** die Gesamtlast über alle Gruppen.
+
+Regler und Zahlenfeld sind gekoppelt. Die Wertebereiche entsprechen dem Backend: Übergangszeit 0–60000 ms, Drosselung 0–5000 ms, Watchdog 60–3600 s, Sammelfenster 10–2000 ms, Batchgröße 1–50 Lampen, Batch-Pause 0–2000 ms, Gruppenrate 1–50/s, globale Rate 1–100/s und Cluster-Abstand 0–50 ms. Dies sind technische Eingabegrenzen, keine Freigabe dieser Raten durch den Hersteller. Sync-Offsets bleiben bei −500 bis +1000 ms in 10-ms-Schritten.
+
+Beispiel für fünf Zweier-Cluster, Batchgröße 4, Gruppenrate 10/s, globale Rate 20/s und Batch-Pause 30 ms: Die geplanten Starts nach dem Sammelfenster liegen bei `0, 50, 150, 200, 330, 380, 480, 530, 660, 710 ms`. Die beiden Batch-Pausen sind zusätzlich enthalten.
 
 Beispiel für ein Wohnzimmer:
 
@@ -471,6 +490,8 @@ Hue nennt ungefähr 10 Lichtbefehle/s und 1 Gruppenbefehl/s als Richtwerte. Die 
 
 Bei Hue-429, verspäteten Reaktionen oder nicht übernommenen Farben zuerst die globale Rate reduzieren. Cluster können den Gruppenabstand verkürzen, aber nicht die globale Grenze. Ein längeres Sammelfenster hilft beim Zusammenfassen von Szenenbefehlen, verzögert jedoch den Start. Es erhöht nicht die Bridge-Kapazität.
 
+Die öffentliche [Hue-Performance-Empfehlung](https://developers.meethue.com/support/) nennt ungefähr 10 Einzellicht- und 1 Gruppenbefehl pro Sekunde für die dort beschriebenen `/lights`-/`/groups`-Ressourcen. Das ist eine konservative Orientierung, keine präzise universelle V2-Grenze. Dauerhaft schnelle Farbfolgen sollen laut [Hue-Hinweis zur V2-API](https://developers.meethue.com/new-hue-api/) über die Streaming-API statt über REST laufen. Dieser Fork bleibt eine REST-/SSE-Bridge und implementiert kein Entertainment-Streaming.
+
 ### Diagnose pro Lampe
 
 Der Tab **Diagnose** enthält zusätzlich eine Zuverlässigkeitstabelle für Lampenbefehle seit dem letzten Neustart.
@@ -478,13 +499,17 @@ Der Tab **Diagnose** enthält zusätzlich eine Zuverlässigkeitstabelle für Lam
 | Wert | Bedeutung |
 | --- | --- |
 | Befehle | Anzahl der von loxHueBridge gesendeten logischen Lampenbefehle |
-| Bestätigt | EventStream-Rückmeldungen, die zu `on` oder Helligkeit passen |
-| Widersprüche | EventStream-Rückmeldungen oder Hue `communication_error`, die nicht zum erwarteten Zustand passen |
+| Bestätigt | Einmal pro Befehl, sobald alle angeforderten Ein/Aus- und Helligkeitsfelder durch SSE bestätigt wurden |
+| Widersprüche | Höchstens einmal pro Befehl bei abweichenden SSE-Werten nach der Übergangszeit. Bereits abgeschlossene oder abgelöste Befehle werden nicht weiter verglichen |
+| Quote | Anteil der logischen Befehle mit einem erfassten Widerspruch, keine allgemeine Ausfallquote |
+| Communication Errors | Separate Hue-Fehlermeldungen; werden nicht zusätzlich als SSE-Widerspruch gezählt |
 | Verifiziert | Aktive Nachprüfungen durch `Zustand nachlesen und korrigieren` |
 | Nachgesteuert | Anzahl der erneut gesendeten Payloads nach bestätigter Abweichung |
 | Mapping | Loxone-/Hue-Zuordnung mit Device, Multi-Sync-Gruppe und Ablauf-Cluster |
 
 Diese Diagnose ersetzt keine echte Zigbee-Funkmessung, macht aber sichtbar, welche einzelne Lampe bei Szenen oder schnellen Farbwechseln auffällig reagiert.
+
+Die Zählung funktioniert unabhängig vom Debug-Modus. Ohne passende Zustandsänderung kann eine SSE-Bestätigung ausbleiben, obwohl der Sollwert bereits gesetzt ist. Das gilt nicht automatisch als Fehler. Farben und Effekte werden durch diese Ein/Aus-/Helligkeitsdiagnose nicht vollständig bestätigt. Zwischenstände während eines Übergangs zählen nicht als Widerspruch.
 
 Ein erfolgreicher HTTP-PUT ist nur eine Annahme durch die Bridge, kein bestätigter Lampenzustand. Dashboard, UDP und MQTT erhalten Istwerte aus Hue-Abfragen bzw. SSE, nicht aus dem angeforderten Payload. Die Diagnose-API trennt `angefordert` und `angenommenAt` davon. Nicht leere Hue-`errors[]` gelten auch bei HTTP 200 als Fehler.
 
@@ -494,6 +519,10 @@ Ein erfolgreicher HTTP-PUT ist nur eine Annahme durch die Bridge, kein bestätig
 
 Gespeichert wird über temporäre Dateien mit atomarem Austausch. Der gemeinsame Config-/Mapping-Restore verwendet zusätzlich ein Wiederherstellungsjournal; nach einem unterbrochenen Restore stellt der nächste Start beide vorherigen Dateien wieder her. Speicherfehler werden als Fehler an die UI zurückgegeben. Ein ungültiger Datenbestand wird nicht still durch eine leere Konfiguration ersetzt.
 
+Mapping-Namen müssen nach Kleinschreibung eindeutig und URL-tauglich sein. `all`/`alles` sind nur für das ausdrückliche Global-Mapping zulässig; API- und Discovery-Namen sind reserviert. Mehrere unterschiedliche Namen für dieselbe Light-UUID bleiben möglich. Bestehende Dateien werden beim Start nicht umgeschrieben; ungültige Einträge müssen vor dem nächsten Speichern oder Restore korrigiert werden. Fehler lassen den bisherigen Datenbestand erhalten.
+
+Bei SQLite-Lese-/Schreibfehlern hält der Logger neue Einträge in einem begrenzten RAM-Puffer und zeigt den degradierten Zustand unter System an. RAM-Logs gehen beim Neustart verloren. Nach Behebung, etwa Freigeben von Speicherplatz, versucht **Allgemeine Einstellungen speichern** bei deaktiviertem SD-Card Mode die Datenbank erneut zu öffnen. Alte Datenbankeinträge werden nicht gelöscht, die zwischenzeitlichen RAM-Einträge aber nicht nachträglich in SQLite übertragen.
+
 ---
 
 ## 📡 MQTT Integration
@@ -502,6 +531,8 @@ Die Bridge kann Statuswerte parallel an einen MQTT Broker senden.
 Die Konfiguration erfolgt im Web-Interface unter dem Tab **System**.
 
 Ein leeres MQTT-Passwortfeld beim Speichern bedeutet: vorhandenes Passwort beibehalten. Ein gespeichertes Passwort wird nur über die separate Option **MQTT Passwort löschen** entfernt.
+
+Passwörter werden einschließlich führender und abschließender Leerzeichen unverändert verwendet. Das Speichern von Debug- oder Timingwerten baut eine unveränderte MQTT-Verbindung nicht neu auf.
 
 **Topic Struktur:**
 

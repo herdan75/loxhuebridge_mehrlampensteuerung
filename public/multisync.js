@@ -50,10 +50,14 @@
 
         let lastDelay = -commandSpacingMs;
         let previousClusterKey = null;
-        let commandIndex = 0;
+        let batchCount = 0;
         const schedule = [];
 
         sortedClusters.forEach((cluster, clusterIndex) => {
+            const startsNewBatch = batchCount > 0 && batchCount + cluster.items.length > batchSize;
+            const clusterPause = startsNewBatch ? batchDelayMs : 0;
+            if (startsNewBatch) batchCount = 0;
+            batchCount += cluster.items.length;
             cluster.items
                 .sort((a, b) => {
                     if (a.offset !== b.offset) return a.offset - b.offset;
@@ -63,19 +67,15 @@
                     const spacingFromPrevious = previousClusterKey === scheduleItem.clusterKey
                         ? sameClusterSpacingMs
                         : commandSpacingMs;
-                    const batchDelay = previousClusterKey === scheduleItem.clusterKey
-                        ? 0
-                        : Math.floor(commandIndex / batchSize) * batchDelayMs;
                     const requestedDelay = baseDelayMs
                         + cluster.minOffset
                         + (clusterIndex * commandSpacingMs)
                         + Math.max(0, scheduleItem.offset - cluster.minOffset)
-                        + (withinClusterIndex * sameClusterSpacingMs)
-                        + batchDelay;
+                        + (withinClusterIndex * sameClusterSpacingMs);
                     const delayMs = Math.max(
                         Math.max(0, Math.round(requestedDelay)),
                         lastDelay + spacingFromPrevious
-                    );
+                    ) + (withinClusterIndex === 0 ? clusterPause : 0);
 
                     schedule.push({
                         ...scheduleItem,
@@ -87,15 +87,15 @@
 
                     lastDelay = delayMs;
                     previousClusterKey = scheduleItem.clusterKey;
-                    commandIndex += 1;
                 });
         });
 
         schedule.forEach((scheduleItem, index) => {
             const nextItem = schedule[index + 1];
-            scheduleItem.schedulerSpacingMs = nextItem && nextItem.clusterKey === scheduleItem.clusterKey
+            const spacing = nextItem && nextItem.clusterKey === scheduleItem.clusterKey
                 ? sameClusterSpacingMs
                 : commandSpacingMs;
+            scheduleItem.schedulerSpacingMs = nextItem ? Math.max(spacing, nextItem.delayMs - scheduleItem.delayMs) : spacing;
         });
 
         return schedule;

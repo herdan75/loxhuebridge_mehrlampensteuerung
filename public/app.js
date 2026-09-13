@@ -12,6 +12,13 @@
     let multiLightControlSettings = { groups: MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}` })) };
     let securitySettings = { authEnabled: false, authUser: 'admin', passwordConfigured: false };
     let detailsDraft = null;
+    let settingsDirty = false;
+    let securityDirty = false;
+    let settingsBusy = false;
+    let securityBusy = false;
+    let settingsLoadId = 0;
+    let modalReturnFocus = null;
+    let modalBodyOverflow = '';
 
     function debugLog(msg) { console.log(`[UI] ${msg}`); }
 
@@ -28,6 +35,15 @@
     }
 
     function setTab(tab) {
+        if (tab === currentTab) return;
+        if (currentTab === 'system') {
+            if (settingsBusy || securityBusy) return;
+            if ((settingsDirty || securityDirty) && !confirm('Ungespeicherte Einstellungen verwerfen?')) return;
+            settingsDirty = false;
+            securityDirty = false;
+            settingsLoadId++;
+            document.getElementById('securityTable').innerHTML = '';
+        }
         debugLog(`Tab: ${tab}`);
         currentTab = tab;
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -59,6 +75,8 @@
     // --- Hilfsfunktion für einheitliche Batteriewarnungen ---
     function getBatteryHTML(bat) {
         if (bat === undefined || bat === null) return { badge: '', textStyle: '' };
+        bat = safeNumber(bat, null);
+        if (bat === null) return { badge: '', textStyle: '' };
         
         let color = '';
         let badgeStyle = '';
@@ -124,10 +142,10 @@
             if (st.temp !== undefined) lastVal += `${st.temp}°C `;
             const tConf = typeConfig[m.hue_type] || {icon:'❓', label: m.hue_type};
             html += `<tr>
-                <td style="${textStyle}"><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:#666">${escapeHtml(m.hue_name)}</div></td>
-                <td><span class="badge" style="background:#f1f3f5;color:#333; border:1px solid #ddd">${escapeHtml(tConf.icon)} ${escapeHtml(tConf.label)}</span></td>
+                <td style="${textStyle}"><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:var(--text-muted)">${escapeHtml(m.hue_name)}</div></td>
+                <td><span class="badge" style="background:var(--subtle-bg);color:var(--text-main); border:1px solid #ddd">${escapeHtml(tConf.icon)} ${escapeHtml(tConf.label)}</span></td>
                 <td>${badge || '-'}</td>
-                <td style="font-size:0.8em; font-family:monospace; color:#555">${lastVal}</td>
+                <td style="font-size:0.8em; font-family:monospace; color:var(--text-muted)">${escapeHtml(lastVal)}</td>
             </tr>`;
         });
         html += '</tbody></table>';
@@ -145,8 +163,8 @@
             if (diagData.zigbee?.bridge) {
                 const b = diagData.zigbee.bridge;
                 bridgeHtml += `<table class="settings-table"><tbody>`;
-                if (b.bridge_id)    bridgeHtml += `<tr><td>Bridge ID</td><td style="font-family:monospace">${b.bridge_id}</td></tr>`;
-                if (b.time_zone?.time_zone) bridgeHtml += `<tr><td>Zeitzone</td><td>${b.time_zone.time_zone}</td></tr>`;
+                if (b.bridge_id)    bridgeHtml += `<tr><td>Bridge ID</td><td style="font-family:monospace">${escapeHtml(b.bridge_id)}</td></tr>`;
+                if (b.time_zone?.time_zone) bridgeHtml += `<tr><td>Zeitzone</td><td>${escapeHtml(b.time_zone.time_zone)}</td></tr>`;
                 bridgeHtml += `</tbody></table>`;
             }
 
@@ -184,11 +202,11 @@
                     const yes = '<span style="color:var(--success,#4caf50)">✅</span>';
                     const no  = '<span style="color:#ccc">❌</span>';
                     const effects = caps.supportedEffects?.filter(e => e !== 'no_effect').map(e =>
-                        `<span class="badge" style="font-size:0.75em;background:#f0f0f0">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
+                        `<span class="badge" style="font-size:0.75em;background:var(--subtle-bg)">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
                     const timedFx = caps.supportedTimedEffects?.filter(e => e !== 'no_effect').map(e =>
                         `<span class="badge" style="font-size:0.75em;background:#e8f5e9">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
                     capsHtml += `<tr>
-                        <td><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:#666">${escapeHtml(m.hue_name)}</div></td>
+                        <td><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:var(--text-muted)">${escapeHtml(m.hue_name)}</div></td>
                         <td style="text-align:center">${caps.supportsDimming ? yes : no}</td>
                         <td style="text-align:center">${caps.supportsColor  ? yes : no}</td>
                         <td style="text-align:center">${caps.supportsCt     ? yes : no}</td>
@@ -235,8 +253,8 @@
                     const color = !problem ? 'var(--success,#4caf50)' : (quote >= 10 ? 'red' : 'orange');
                     const mapping = row.mapping || {};
                     const mappingText = [
-                        mapping.deviceName ? `Device: ${mapping.deviceName}` : '',
-                        mapping.multiSync ? `Sync: ${mapping.multiSyncGroup || '-'} / ${mapping.syncCluster || '-'}` : 'Sync: aus'
+                        mapping.deviceName ? `Device: ${escapeHtml(mapping.deviceName)}` : '',
+                        mapping.multiSync ? `Sync: ${escapeHtml(mapping.multiSyncGroup || '-')} / ${escapeHtml(mapping.syncCluster || '-')}` : 'Sync: aus'
                     ].filter(Boolean).join('<br>');
                     const last = row.letzterWiderspruch
                         ? `${escapeHtml(row.letzterWiderspruch.erwartet || '')} → ${escapeHtml(row.letzterWiderspruch.gemeldet || '')}<br><span style="color:var(--text-muted)">nach ${Math.round((row.letzterWiderspruch.nachMs || 0) / 1000)} s</span>`
@@ -262,6 +280,16 @@
         } catch(e) {
             div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Lampendiagnose nicht verfügbar: ${escapeHtml(e.message)}</div>`;
         }
+        div.querySelectorAll?.('table').forEach(table => {
+            if (table.parentElement.classList.contains('diag-scroll')) return;
+            const scroll = document.createElement('div');
+            scroll.className = 'diag-scroll';
+            scroll.tabIndex = 0;
+            scroll.setAttribute('role', 'region');
+            scroll.setAttribute('aria-label', 'Diagnosetabelle');
+            table.before(scroll);
+            scroll.appendChild(table);
+        });
     }
 
     async function loadDetected() {
@@ -324,7 +352,7 @@
         const consoleDiv = document.getElementById('logConsole');
         if(!consoleDiv) return;
         if (!cachedLogs || cachedLogs.length === 0) {
-            consoleDiv.innerHTML = '<div style="text-align:center; color:#555; padding-top:20px;">Keine Einträge gefunden.</div>';
+            consoleDiv.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding-top:20px;">Keine Einträge gefunden.</div>';
             return;
         }
         const html = cachedLogs.map(l => {
@@ -351,6 +379,7 @@
     function renderMappings() {
         const list = document.getElementById('mappingList');
         if(!list) return;
+        if (list.contains?.(document.activeElement)) return;
         list.innerHTML = '';
         const filtered = mappings.filter(m => {
             if (currentTab === 'light') return m.hue_type === 'light' || m.hue_type === 'group';
@@ -445,17 +474,16 @@
 
         const div = document.createElement('div');
         div.className = `mapping-item type-${escapeHtml(m.hue_type)}`;
-        div.onclick = () => showDetails(m.hue_uuid, m.loxone_name);
 
         div.innerHTML = `
-            <div style="${batTextStyle}">
-                <div class="mapping-lox">${escapeHtml(m.loxone_name)}</div>
-                <div class="mapping-hue">${escapeHtml(m.hue_name)}</div>
-            </div>
-            <div style="display:flex; align-items:center">
-                <div class="status-badges">${badges}</div>
-                <button class="del-btn" onclick="event.stopPropagation(); deleteMapping(${jsArg(m.loxone_name)})">✖</button>
-            </div>
+            <button class="mapping-open" data-mapping="${escapeHtml(m.loxone_name)}" onclick="showDetails(${jsArg(m.hue_uuid)}, ${jsArg(m.loxone_name)})">
+                <span class="mapping-name" style="${batTextStyle}">
+                    <span class="mapping-lox">${escapeHtml(m.loxone_name)}</span>
+                    <span class="mapping-hue">${escapeHtml(m.hue_name)}</span>
+                </span>
+                <span class="status-badges">${badges}</span>
+            </button>
+            <button class="del-btn" aria-label="${escapeHtml(m.loxone_name)} löschen" onclick="deleteMapping(${jsArg(m.loxone_name)})">✖</button>
         `;
         return div;
     }
@@ -557,11 +585,11 @@
     }
 
     function jsArg(value) {
-        return JSON.stringify(String(value ?? ''))
+        return escapeHtml(JSON.stringify(String(value ?? ''))
             .replace(/</g, '\\u003c')
             .replace(/>/g, '\\u003e')
             .replace(/&/g, '\\u0026')
-            .replace(/'/g, '\\u0027');
+            .replace(/'/g, '\\u0027'));
     }
 
     function safeNumber(value, fallback = '') {
@@ -669,8 +697,14 @@
     }
 
     function renderMultiSyncGroupRows(settings) {
-        const cfg = settings || {};
-        const groups = cfg.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}`, syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 10, sameClusterSpacingMs: 10 }));
+        const cfg = { ...settings, bridgeMaxCommandsPerSecond: safeNumber(settings?.bridgeMaxCommandsPerSecond, 30) };
+        const groups = MULTI_SYNC_GROUP_IDS.map(id => {
+            const group = cfg.groups?.find(item => item.id === id) || {};
+            return { ...group, id, ...Object.fromEntries([
+                ['syncWindowMs', 120], ['batchSize', 4], ['batchDelayMs', 30],
+                ['maxCommandsPerSecond', 10], ['sameClusterSpacingMs', 10]
+            ].map(([key, fallback]) => [key, safeNumber(group[key], fallback)])) };
+        });
         let html = `
             <tr>
                 <td>${infoLabel('Max. Bridge-Befehle/s', 'Harte Mindestpause für alle Hue-PUTs, auch Cluster, Effekte, Retries und Funkmaßnahmen. Bei 20/s mindestens 50 ms zwischen Starts. Bei Hue 429 senken; zunächst 10/s testen.')}</td>
@@ -690,7 +724,7 @@
             html += `
                 <tr>
                     <td colspan="2">
-                        <details style="border:1px solid var(--border); border-radius:6px; padding:10px; background:#fafafa;" ${id === 'a' ? 'open' : ''}>
+                        <details style="border:1px solid var(--border); border-radius:6px; padding:10px; background:var(--subtle-bg);" ${id === 'a' ? 'open' : ''}>
                             <summary style="cursor:pointer; font-weight:bold;">${escapeHtml(group.name || label)}</summary>
                             <table class="settings-table" style="margin-top:10px;">
                                 <tr><td>${infoLabel('Name', 'Freier Anzeigename der Multi-Sync-Gruppe. Der Name kann auch als Effektziel verwendet werden, wenn kein gleichnamiges Loxone-Mapping existiert.')}</td><td><input id="sys_multiName_${id}" value="${escapeHtml(group.name || label)}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
@@ -699,7 +733,7 @@
                                 <tr><td>${infoLabel('Batch-Pause', 'Zusätzliche Pause nach jedem Batch. Hilft nur, wenn die Batchgröße kleiner ist als die Lampenanzahl. Bei Batchgröße 10 und 10 Lampen meist 0 ms sinnvoll.')}</td><td><div class="slider-container"><input type="range" id="sys_multiBatchDelayMs_${id}" min="0" max="300" step="10" value="${group.batchDelayMs ?? 30}" oninput="document.getElementById('val_multiBatchDelay_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiBatchDelay_${id}" class="slider-val">${group.batchDelayMs ?? 30} ms</span></div></td></tr>
                                 <tr><td>${infoLabel('Max. Lichtbefehle/s', 'Bestimmt den Abstand zwischen verschiedenen Clustern dieser Gruppe. Im Cluster gilt dessen Abstand. Die globale Grenze begrenzt beide; zunächst 10/s testen.')}</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
                                 <tr><td>${infoLabel('Abstand im Ablauf-Cluster', 'Sollabstand innerhalb eines Clusters. Die globale Bridge-Grenze hat Vorrang: Bei 20/s sind auch mit Sollwert 5 ms mindestens 50 ms nötig.')}</td><td><div class="slider-container"><input type="range" id="sys_multiSameClusterSpacingMs_${id}" min="0" max="50" step="1" value="${group.sameClusterSpacingMs ?? 10}" oninput="document.getElementById('val_multiSameClusterSpacing_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSameClusterSpacing_${id}" class="slider-val">${group.sameClusterSpacingMs ?? 10} ms</span></div></td></tr>
-                                <tr><td>${infoLabel('Timing-Test', 'Rechnerischer Plan einschließlich globaler Grenze. Keine Live-Messung: spätere Eingänge, Warteschlangen, Bridge-Antwortzeiten und Retries können den Ablauf verlängern.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
+                                <tr><td>${infoLabel('Timing-Test', 'Rechnerischer Plan einschließlich globaler Grenze. Keine Live-Messung: spätere Eingänge, Warteschlangen, Bridge-Antwortzeiten und Retries können den Ablauf verlängern.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:var(--subtle-bg); border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
                             </table>
                         </details>
                     </td>
@@ -713,7 +747,7 @@
     function renderSecurityRows(security) {
         const s = security || securitySettings;
         return `
-            <tr><td colspan="2" style="background:#eee;font-weight:bold">Sicherheit / Zugriffsschutz</td></tr>
+            <tr><td colspan="2" style="background:var(--section-bg);font-weight:bold">Sicherheit / Zugriffsschutz</td></tr>
             <tr>
                 <td>${infoLabel('Dashboard/API schützen', 'Schützt Webinterface und API mit Basic Auth. Loxone-Steuer-URLs bleiben bewusst frei, damit bestehende virtuelle Ausgänge weiter funktionieren.')}</td>
                 <td>
@@ -729,7 +763,7 @@
             <tr>
                 <td></td>
                 <td>
-                    <button class="add-btn" style="width:auto; margin:0;" onclick="saveSecuritySettings()">Zugriffsschutz speichern</button>
+                    <button id="saveSecurityButton" class="add-btn" style="width:auto; margin:0;" onclick="saveSecuritySettings()">Zugriffsschutz speichern</button>
                     <div id="securityStatusHint" style="font-size:0.75em; color:var(--text-muted); margin-top:6px;">
                         ${s.passwordConfigured ? 'Passwort ist gesetzt.' : 'Noch kein Passwort gesetzt.'}
                     </div>
@@ -739,6 +773,7 @@
     }
 
     async function saveSecuritySettings() {
+        if (securityBusy) return;
         const authEnabled = document.getElementById('sys_authEnabled').checked;
         const authUser = document.getElementById('sys_authUser').value.trim() || 'admin';
         const password = document.getElementById('sys_authPassword').value;
@@ -753,6 +788,9 @@
             return;
         }
 
+        securityBusy = true;
+        document.getElementById('saveSecurityButton').disabled = true;
+        document.getElementById('securityTable').inert = true;
         try {
         const result = await apiRequest('/api/security/settings', {
             method: 'POST',
@@ -765,12 +803,27 @@
             authUser: result.authUser,
             passwordConfigured: result.passwordConfigured
         };
-        alert('Zugriffsschutz gespeichert. Beim nächsten Aufruf ist eine Anmeldung erforderlich.');
-        loadSettings();
+        securityDirty = false;
+        renderSecuritySettings();
+        alert(result.authEnabled
+            ? 'Zugriffsschutz gespeichert. Beim nächsten Aufruf ist eine Anmeldung erforderlich.'
+            : 'Zugriffsschutz deaktiviert.');
         } catch (error) { alert('Zugriffsschutz nicht gespeichert: ' + error.message); }
+        finally {
+            securityBusy = false;
+            document.getElementById('securityTable').inert = false;
+            document.getElementById('saveSecurityButton').disabled = false;
+        }
     }
 
     async function saveSettings() {
+        if (settingsBusy) return;
+        for (const input of document.querySelectorAll('#settingsTable input[type="number"]')) {
+            if (!input.reportValidity()) return;
+        }
+        settingsBusy = true;
+        document.getElementById('saveSettingsButton').disabled = true;
+        document.getElementById('settingsTable').inert = true;
         const d = {};
         ['sys_loxIp', 'sys_loxPort', 'sys_mqttBroker', 'sys_mqttPort', 'sys_mqttUser', 'sys_mqttPass', 'sys_mqttPrefix'].forEach(id => d[id.replace('sys_','')] = document.getElementById(id).value);
         
@@ -796,25 +849,92 @@
                     groups: d.multiGroups
                 }
             })});
-            alert("Gespeichert!");
-            loadSettings();
+            settingsDirty = false;
+            await loadSettings('general');
+            alert('Allgemeine Einstellungen gespeichert.' + (securityDirty ? ' Zugriffsschutz ist noch nicht gespeichert.' : ''));
         } catch(e) { alert('Speichern fehlgeschlagen: ' + e.message); }
+        finally {
+            settingsBusy = false;
+            document.getElementById('settingsTable').inert = false;
+            document.getElementById('saveSettingsButton').disabled = false;
+        }
     }
 
-    async function loadSettings() {
+    function renderSecuritySettings() {
+        const table = document.getElementById('securityTable');
+        table.innerHTML = renderSecurityRows(securitySettings);
+        table.oninput = table.onchange = () => { securityDirty = true; };
+    }
+
+    function upgradeNumericControls(settings) {
+        const fields = [
+            ['sys_transition', 'transitionTime', settings.transitionTime],
+            ['sys_throttle', 'throttleTime', settings.throttleTime],
+            ['sys_eventStreamWatchdogTimeoutSeconds', 'eventStreamWatchdogTimeoutSeconds', settings.eventStreamWatchdogTimeoutSeconds],
+            ['sys_multiBridgeMaxCommandsPerSecond', 'bridgeMaxCommandsPerSecond', settings.multiLightControl?.bridgeMaxCommandsPerSecond]
+        ];
+        const groupFields = {
+            multiSyncWindowMs: 'syncWindowMs', multiBatchSize: 'batchSize', multiBatchDelayMs: 'batchDelayMs',
+            multiMaxCommandsPerSecond: 'maxCommandsPerSecond', multiSameClusterSpacingMs: 'sameClusterSpacingMs'
+        };
+        MULTI_SYNC_GROUP_IDS.forEach(id => {
+            const group = settings.multiLightControl?.groups?.find(item => item.id === id) || {};
+            Object.entries(groupFields).forEach(([field, key]) => fields.push([`sys_${field}_${id}`, key, group[key]]));
+        });
+        fields.forEach(([id, key, value]) => {
+            const input = document.getElementById(id);
+            if (!input?.parentElement) return;
+            const limits = SettingsLimits[key];
+            const wasRange = input.type === 'range';
+            const updateLabel = input.oninput;
+            input.type = 'number';
+            input.min = limits.min;
+            input.max = limits.max;
+            input.step = '1';
+            input.required = true;
+            input.value = safeNumber(value, limits.default);
+            const label = input.closest('tr').querySelector('td').textContent.trim();
+            input.setAttribute('aria-label', label + (key === 'eventStreamWatchdogTimeoutSeconds' ? ' in Sekunden' : ''));
+            if (!wasRange) return;
+            input.classList.add('numeric-entry');
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.id = id + '_slider';
+            slider.min = input.min;
+            slider.max = input.max;
+            slider.step = input.step;
+            slider.value = input.value;
+            slider.setAttribute('aria-label', label);
+            input.before(slider);
+            input.oninput = () => {
+                if (!input.checkValidity()) return;
+                slider.value = input.value;
+                if (updateLabel) updateLabel.call(input);
+            };
+            slider.oninput = () => {
+                input.value = slider.value;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            };
+            if (updateLabel) updateLabel.call(input);
+        });
+    }
+
+    async function loadSettings(section = 'all') {
+        const loadId = ++settingsLoadId;
         try {
             const [s, security] = await Promise.all([
                 apiRequest('/api/settings'),
                 apiRequest('/api/security/status')
             ]);
+            if (loadId !== settingsLoadId) return;
             securitySettings = security;
             multiLightControlSettings = s.multiLightControl || multiLightControlSettings;
             const table = document.getElementById('settingsTable');
-            const v = (val) => val !== undefined ? val : '';
+            const v = (val) => escapeHtml(val);
             
             table.innerHTML = `
-                <tr><td colspan="2" style="background:#eee;font-weight:bold">Allgemein</td></tr>
-                <tr><td>Version</td><td><span class="badge" style="background:#333;color:#fff">${s.version}</span></td></tr>
+                <tr><td colspan="2" style="background:var(--section-bg);font-weight:bold">Allgemein</td></tr>
+                <tr><td>Version</td><td><span class="badge" style="background:#333;color:#fff">${v(s.version)}</span></td></tr>
                 <tr><td>${infoLabel('Loxone IP', 'IP-Adresse des Loxone Miniservers für UDP-Rückmeldungen von Hue Statusänderungen.')}</td><td><input id="sys_loxIp" value="${v(s.loxone_ip)}"></td></tr>
                 <tr><td>${infoLabel('UDP Port', 'UDP-Port am Loxone Miniserver, auf den Statusmeldungen gesendet werden. Muss zur virtuellen UDP-Eingangskonfiguration passen.')}</td><td><input type="number" id="sys_loxPort" value="${v(s.loxone_port)}"></td></tr>
                 
@@ -840,56 +960,15 @@
                     <td>${infoLabel('EventStream Watchdog', 'Startet den Hue EventStream neu, wenn längere Zeit keine Daten kommen. 10 min ist Standard; niedriger nur bei echten Aussetzern.')}</td>
                     <td>
                         <div class="slider-container">
-                            <input type="range" id="sys_eventStreamWatchdogTimeoutSeconds" min="60" max="3600" step="60" value="${v(s.eventStreamWatchdogTimeoutSeconds ?? 600)}" oninput="document.getElementById('val_eventWatchdog').innerText = Math.round(this.value / 60) + ' min'">
-                            <span id="val_eventWatchdog" class="slider-val">${Math.round((s.eventStreamWatchdogTimeoutSeconds ?? 600) / 60)} min</span>
+                            <input type="range" id="sys_eventStreamWatchdogTimeoutSeconds" min="60" max="3600" step="1" value="${v(s.eventStreamWatchdogTimeoutSeconds ?? 600)}" oninput="document.getElementById('val_eventWatchdog').innerText = this.value + ' s'">
+                            <span id="val_eventWatchdog" class="slider-val">${v(s.eventStreamWatchdogTimeoutSeconds ?? 600)} s</span>
                         </div>
                         <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Neustart des Hue EventStreams nach Ruhezeit ohne Daten. Standard: 10 min; niedriger nur bei echten Aussetzern.</div>
                     </td>
                 </tr>
 
-                <tr><td colspan="2" style="background:#eee;font-weight:bold">Mehrlampensynchronisierung</td></tr>
+                <tr><td colspan="2" style="background:var(--section-bg);font-weight:bold">Mehrlampensynchronisierung</td></tr>
                 ${renderMultiSyncGroupRows(s.multiLightControl)}
-                <!-- legacy single-group controls disabled by grouped scheduler
-                <tr>
-                    <td>Sammelfenster</td>
-                    <td>
-                        <div class="slider-container">
-                            <input type="range" id="sys_multiSyncWindowMs" min="50" max="500" step="10" value="${v(s.multiLightControl?.syncWindowMs ?? 120)}" oninput="document.getElementById('val_multiSyncWindow').innerText = this.value + ' ms'; renderMultiSyncPreview();">
-                            <span id="val_multiSyncWindow" class="slider-val">${v(s.multiLightControl?.syncWindowMs ?? 120)} ms</span>
-                        </div>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Batchgröße</td>
-                    <td><input type="number" id="sys_multiBatchSize" min="1" max="20" step="1" value="${v(s.multiLightControl?.batchSize ?? 4)}" oninput="renderMultiSyncPreview()"></td>
-                </tr>
-                <tr>
-                    <td>Batch-Pause</td>
-                    <td>
-                        <div class="slider-container">
-                            <input type="range" id="sys_multiBatchDelayMs" min="0" max="300" step="10" value="${v(s.multiLightControl?.batchDelayMs ?? 30)}" oninput="document.getElementById('val_multiBatchDelay').innerText = this.value + ' ms'; renderMultiSyncPreview();">
-                            <span id="val_multiBatchDelay" class="slider-val">${v(s.multiLightControl?.batchDelayMs ?? 30)} ms</span>
-                        </div>
-                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Gilt nur für Lampen mit aktivierter Mehrlampensynchronisierung.</div>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Max. Lichtbefehle/s</td>
-                    <td>
-                        <div class="slider-container">
-                            <input type="range" id="sys_multiMaxCommandsPerSecond" min="1" max="50" step="1" value="${v(s.multiLightControl?.maxCommandsPerSecond ?? 10)}" oninput="document.getElementById('val_multiMaxRate').innerText = this.value + ' /s'; renderMultiSyncPreview();">
-                            <span id="val_multiMaxRate" class="slider-val">${v(s.multiLightControl?.maxCommandsPerSecond ?? 10)} /s</span>
-                        </div>
-                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">10/s entspricht der Hue-Empfehlung. Höhere Werte vorsichtig je Lampenmenge testen.</div>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Timing-Test</td>
-                    <td>
-                        <div id="multiSyncPreview" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div>
-                    </td>
-                </tr>
-                -->
 
                 <tr><td>${infoLabel('Debug Modus', 'Schreibt detaillierte IN/OUT/Event-Logs. Hilfreich zum Testen, im Dauerbetrieb bei vielen Befehlen eher deaktivieren.')}</td><td><input type="checkbox" id="sys_debug" ${s.debug?'checked':''}></td></tr>
                 <tr>
@@ -897,12 +976,11 @@
                     <td>
                         <input type="checkbox" id="sys_disableLogDisk" ${s.disableLogDisk?'checked':''}>
                         <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Deaktiviert Schreibzugriffe auf logs.db.</div>
+                        ${s.logDiskDegraded ? '<div role="alert" class="status-err">Log-Datenbank nicht verfügbar. Neue Logs bleiben vorübergehend im RAM und gehen beim Neustart verloren.</div>' : ''}
                     </td>
                 </tr>
 
-                ${renderSecurityRows(securitySettings)}
-
-                <tr><td colspan="2" style="background:#eee;font-weight:bold">MQTT</td></tr>
+                <tr><td colspan="2" style="background:var(--section-bg);font-weight:bold">MQTT</td></tr>
                 <tr><td>${infoLabel('Aktivieren', 'Aktiviert parallele Statusausgabe an einen MQTT Broker.')}</td><td><input type="checkbox" id="sys_mqttEnabled" ${s.mqttEnabled?'checked':''}></td></tr>
                 <tr><td>${infoLabel('Broker IP', 'Adresse des MQTT Brokers, z. B. Mosquitto oder Home Assistant MQTT.')}</td><td><input id="sys_mqttBroker" value="${v(s.mqttBroker)}"></td></tr>
                 <tr><td>${infoLabel('Port', 'MQTT-Port. Standard ist 1883 ohne TLS.')}</td><td><input type="number" id="sys_mqttPort" value="${v(s.mqttPort)||1883}"></td></tr>
@@ -911,8 +989,14 @@
                 <tr style="${s.mqttPassSet ? '' : 'display:none'}"><td>${infoLabel('Passwort löschen', 'Entfernt das gespeicherte MQTT Passwort beim Speichern.')}</td><td><label style="display:flex; align-items:center; gap:8px;"><input type="checkbox" id="sys_mqttPassClear"> MQTT Passwort löschen</label></td></tr>
                 <tr><td>${infoLabel('Prefix', 'Topic-Prefix für MQTT Statusmeldungen, z. B. loxhue/light/wohnzimmer/on.')}</td><td><input id="sys_mqttPrefix" value="${v(s.mqttPrefix)||'loxhue'}"></td></tr>
             `;
+            upgradeNumericControls(s);
+            table.oninput = table.onchange = () => { settingsDirty = true; };
+            if (section === 'all') renderSecuritySettings();
             renderMultiSyncPreview();
-        } catch(e){ console.error("Fehler bei loadSettings:", e); }
+        } catch(e){
+            console.error('Fehler bei loadSettings:', e);
+            alert('Einstellungen konnten nicht geladen werden: ' + e.message);
+        }
     }
 
     function createDetailsDraft(entry) {
@@ -1081,7 +1165,7 @@
         // 1. SETTINGS (nur für Lichter/Gruppen)
         if (entry.hue_type === 'light' || entry.hue_type === 'group') {
             const caps = target.capabilities || {};
-            const supportsDimming = entry.hue_type === 'group' ? true : !!caps.supportsDimming; 
+            const supportsDimming = entry.hue_type === 'group' ? true : caps.supportsDimming !== false;
             
             const isStrictOnOff = entry.hue_type === 'light' && !supportsDimming;
             if (isStrictOnOff) {
@@ -1194,23 +1278,23 @@
         }
 
         // Sensor Stats
-        if (currentStatus.bat !== undefined) content += `<tr><td>Batterie</td><td>${currentStatus.bat} %</td></tr>`;
-        if (currentStatus.temp !== undefined) content += `<tr><td>Temperatur</td><td>${currentStatus.temp} °C</td></tr>`;
-        if (currentStatus.lux !== undefined) content += `<tr><td>Helligkeit</td><td>${currentStatus.lux} lx</td></tr>`;
+        if (currentStatus.bat !== undefined) content += `<tr><td>Batterie</td><td>${escapeHtml(currentStatus.bat)} %</td></tr>`;
+        if (currentStatus.temp !== undefined) content += `<tr><td>Temperatur</td><td>${escapeHtml(currentStatus.temp)} °C</td></tr>`;
+        if (currentStatus.lux !== undefined) content += `<tr><td>Helligkeit</td><td>${escapeHtml(currentStatus.lux)} lx</td></tr>`;
         if (currentStatus.contact !== undefined) content += `<tr><td>Kontakt</td><td>${currentStatus.contact === 1 ? '🔓 Offen' : '🔒 Geschlossen'}</td></tr>`;
         if (currentStatus.motion !== undefined) content += `<tr><td>Bewegung</td><td>${currentStatus.motion === 1 ? '🏃 Ja' : '🧘 Nein'}</td></tr>`;
 
         content += `<tr><td colspan="2" style="border-bottom:none; padding-top:20px; color:var(--text-muted); font-weight:bold;">📋 Technische Daten</td></tr>`;
         content += `<tr><td>Name</td><td>${escapeHtml(target.name)}</td></tr>`;
         content += `<tr><td>Loxone ID</td><td>${escapeHtml(loxoneName)}</td></tr>`;
-        content += `<tr><td>Typ</td><td><span class="badge" style="background:#eee;color:#333">${escapeHtml(entry.hue_type)}</span></td></tr>`;
+        content += `<tr><td>Typ</td><td><span class="badge" style="background:var(--section-bg);color:var(--text-main)">${escapeHtml(entry.hue_type)}</span></td></tr>`;
         content += `<tr><td>UUID</td><td style="font-size:0.8em; font-family:monospace">${escapeHtml(target.uuid)}</td></tr>`;
         content += `</table></div>`;
 
         const statusEl = document.getElementById('detailsSaveStatus');
         if (statusEl) statusEl.textContent = '';
         document.getElementById('detailsContent').innerHTML = content;
-        document.getElementById('detailsModal').style.display = 'flex';
+        openModal('detailsModal');
     }
 
     function toggleSelectAll() { allSelected = !allSelected; document.querySelectorAll('.modal-checkbox').forEach(cb => cb.checked = allSelected); }
@@ -1248,8 +1332,24 @@
         reader.readAsText(file);
     }
     function updateTransLabel(val, id, unit) { document.getElementById(id).innerText = val + ' ' + unit; }
-    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-    function openExportModal() { document.getElementById('exportModal').style.display = 'flex'; loadExportList(); allSelected = false; }
+    function openModal(id) {
+        modalReturnFocus = document.activeElement;
+        modalBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const modal = document.getElementById(id);
+        modal.style.display = 'flex';
+        document.querySelector('.container').inert = true;
+        (modal.querySelector('button, input, select') || modal).focus();
+    }
+    function closeModal(id) {
+        document.getElementById(id).style.display = 'none';
+        document.body.style.overflow = modalBodyOverflow;
+        document.querySelector('.container').inert = false;
+        const replacement = Array.from(document.querySelectorAll('.mapping-open')).find(el => el.dataset.mapping === modalReturnFocus?.dataset?.mapping);
+        (modalReturnFocus?.isConnected ? modalReturnFocus : replacement)?.focus();
+        modalReturnFocus = null;
+    }
+    function openExportModal() { loadExportList(); allSelected = false; openModal('exportModal'); }
     function loadExportList() {
         const list = document.getElementById('exportList');
         list.innerHTML = '';
@@ -1268,4 +1368,26 @@
         });
     }
 
+    if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('beforeunload', event => {
+            if (settingsDirty || securityDirty || detailsDraftChanged() || settingsBusy || securityBusy) {
+                event.preventDefault();
+                event.returnValue = '';
+            }
+        });
+        document.addEventListener('keydown', event => {
+            const modal = Array.from(document.querySelectorAll('.modal-overlay')).find(el => el.style.display === 'flex');
+            if (!modal) return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                modal.id === 'detailsModal' ? closeDetailsModal() : closeModal(modal.id);
+            } else if (event.key === 'Tab') {
+                const focusable = Array.from(modal.querySelectorAll('button, input, select, [tabindex="0"]')).filter(el => !el.disabled && el.getClientRects().length);
+                const first = focusable[0];
+                const last = focusable.at(-1);
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+                if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+            }
+        });
+    }
     init();

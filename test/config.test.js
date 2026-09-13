@@ -94,7 +94,7 @@ test('F06: Restore rollt beide Dateien bei zweitem Schreibfehler zurueck', () =>
         return originalRename(from, to);
     };
     try {
-        assert.throws(() => configManager.restore({ ...configManager.config, debug: true }, [{ loxone_name: 'restored' }]), /mapping write failed/);
+        assert.throws(() => configManager.restore({ ...configManager.config, debug: true }, [{ loxone_name: 'restored', hue_type: 'light', hue_uuid: 'restored-light' }]), /mapping write failed/);
         assert.strictEqual(fs.readFileSync(configManager.configFile, 'utf8'), beforeConfig);
         assert.strictEqual(fs.readFileSync(configManager.mappingFile, 'utf8'), beforeMapping);
         assert.ok(!fs.existsSync(path.join(configManager.dataDir, '.restore-pending.json')));

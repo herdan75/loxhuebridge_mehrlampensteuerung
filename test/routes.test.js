@@ -57,6 +57,18 @@ function getRouteHandler(path) {
     return layer.route.stack[0].handle;
 }
 
+test('Review F01: Leere Loxone-Adressen werden ohne Konfigurationsaenderung abgelehnt', () => {
+    const previous = structuredClone(configManager.config);
+    for (const loxoneIp of ['', '   ', null, {}, 'bad host']) {
+        let status;
+        getRouteHandler('/api/setup/loxone')({ body: { loxoneIp } }, {
+            status(code) { status = code; return this; }, json() {}
+        });
+        assert.strictEqual(status, 400);
+        assert.deepStrictEqual(configManager.config, previous);
+    }
+});
+
 test('Routes - reservierte Discovery/API Pfade werden nicht als Loxone-Befehl behandelt', () => {
     assert.strictEqual(routes._internals.isReservedDiscoveryPath('api'), true);
     assert.strictEqual(routes._internals.isReservedDiscoveryPath('description.xml'), true);
