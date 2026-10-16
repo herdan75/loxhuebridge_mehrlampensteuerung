@@ -455,3 +455,16 @@ input:checked + .slider:before { transform: translateX(18px); }
         .slider-container input[type="range"] { flex: 1; min-width: 0; }
         .slider-val { font-family: monospace; flex: 0 0 60px; text-align: right; color: var(--accent); font-weight: bold; }
         .settings-card { padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 10px; }
+/* Per-light mains startup controls reuse the modal's existing flow. */
+.power-start-settings { margin: 16px 0; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.power-start-toggle { display: flex; align-items: flex-start; gap: 10px; position: relative; }
+.power-start-toggle input[type="checkbox"] { margin-left: 3px; flex: 0 0 auto; }
+.power-start-toggle .setting-label > label { margin: 0; display: inline; font: inherit; color: inherit; cursor: pointer; }
+.power-start-settings .setting-help { flex: 0 0 18px; position: static; }
+.power-start-settings .setting-help::after { left: 0; right: 0; top: 100%; transform: none; width: auto; box-sizing: border-box; }
+.power-start-field { display: grid; grid-template-columns: minmax(0, 1fr) 120px; align-items: center; gap: 12px; margin-top: 12px; position: relative; }
+.power-start-field input { width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 420px) {
+    .power-start-field { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .power-start-field input { width: 120px; justify-self: end; }
+}

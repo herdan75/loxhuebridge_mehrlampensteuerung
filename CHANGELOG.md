@@ -1,3 +1,23 @@
+## [2.5.14-dev] - 2026-10-16
+### Netzgeschaltete Lampen
+- Option pro Light-UUID für Netzspannung erst mit Lichtbefehl; Standard aus. Anlaufwartezeit standardmäßig 0 ms, begrenzter Wiederanlauf standardmäßig 15 Sekunden und höchstens 8 Einzellichtversuche.
+- Wartezeiten, Rückfragen und Wiederholungen außerhalb der normalen PUT-Warteschlange. Höchstens ein Netzstart-PUT überlappt normale Requests; globale Rate und 429-Pausen gelten weiter für alle PUT-Starts.
+- Neuester Sollwert gewinnt; Aus beendet Einschaltwiederholungen. Warme, bestätigte Lampen bekommen keine zusätzliche Anlaufwartezeit. SSE-Wiederanschluss kann die Wartezeit verkürzen.
+- Native Hue-Gruppenbefehle bleiben erhalten; nur markierte Mitglieder werden anschließend geprüft und bei Bedarf einzeln nachgesteuert. Effekt-Fallbacks berücksichtigen die Option; einmalige Alerts bleiben unverändert.
+- Geräte-Detailfenster mit validierten Zahlenfeldern und Infotexten; Netzstart ersetzt die zusätzlichen Funkmaßnahmen derselben Lampe, ohne deren gespeicherte Auswahl zu verlieren.
+
+### Korrekturen und Diagnose
+- Nachlesen/Wiederholen greift auch bei transientem Fehler des ersten PUTs. Unvollständige GET-Daten gelten nicht mehr als erfolgreiche Zustandsprüfung.
+- Hue-Fachfehler beim Ressourcenabruf werden auch bei HTTP 200 erkannt; bekannte Gerätefähigkeiten bleiben bei solchen Ladefehlern erhalten.
+- Erfolgreiche Zustandsabfragen zählen als Bestätigung; Nachsteuerungen erst beim tatsächlichen Senden. Diagnose ergänzt Anfragenfehler, Netzstartstatus und Versuchszähler.
+- Explizite Null-Übergänge für dimmbare Helligkeits-/Farbwerte; reine Schaltaktoren bleiben ohne Dynamics. Wiederverwendung von HTTPS-Verbindungen reduziert vermeidbare Verbindungsaufbauten.
+- Indirekte Abhängigkeiten `proxy-addr` und `ip-address` auf gepatchte kompatible Versionen aktualisiert.
+
+### Prüfungen und Grenzen
+- Regressionstests für blockierungsfreien Netzstart, globale Rate, Offline/Timeout/429, OFF und Szenenwechsel während des Starts, maximale Versuche, warme Lampen, Gruppen, Effekte, Mapping-Validierung und UI ergänzt.
+- HTTP-Integration mit simuliertem Hue-Endpunkt prüft Speichern, Befehle, SSE-Bestätigung, Diagnose und Backup. Desktop-/Mobilprüfung mit Testdaten; keine physischen Lampen im Test geschaltet.
+- Dokumentation erläutert physische Startgrenzen und zusätzliche Bridge-Last. Keine Zusage identischer Einschaltzeiten nach Netztrennung.
+
 ## [2.5.13-dev] - 2026-09-13
 ### Sicherheit und Befehlsreihenfolge
 - Aktivierter Zugriffsschutz bleibt auch bei unvollständiger Konfiguration erhalten; leere Loxone-Adressen werden beim Speichern abgelehnt.

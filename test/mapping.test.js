@@ -17,4 +17,19 @@ test('Review F10: Legacy defaults and explicit global target remain supported', 
     assert.equal(result.length, 2);
     assert.equal(result[0].multi_sync_group, 'a');
     assert.equal(result[0].sync_offset_ms, 0);
+    assert.equal(result[0].power_switched, false);
+    assert.equal(result[0].power_on_delay_ms, 0);
+    assert.equal(result[0].power_retry_window_ms, 15000);
+});
+
+test('Netzstart: validierte Einstellung nur pro Lampe, sinnvolle Grenzen und Zeitrelation', () => {
+    const result = validateMappings([{ ...lamp, power_switched: true, power_on_delay_ms: 500, power_retry_window_ms: 10000 }]);
+    assert.equal(result[0].power_switched, true);
+    assert.equal(result[0].power_on_delay_ms, 500);
+    for (const values of [
+        { power_switched: 'true' }, { power_on_delay_ms: -1 }, { power_on_delay_ms: 10001 },
+        { power_on_delay_ms: 1.5 }, { power_retry_window_ms: 1999 }, { power_retry_window_ms: 60001 },
+        { power_on_delay_ms: 2000, power_retry_window_ms: 2000 },
+        { power_switched: true, hue_type: 'group' }
+    ]) assert.throws(() => validateMappings([{ ...lamp, ...values }]), e => e.statusCode === 400);
 });

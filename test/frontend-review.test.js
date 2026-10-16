@@ -68,3 +68,28 @@ test('Review F15: Allgemeines Neuladen ersetzt keinen offenen Sicherheitsentwurf
     await vm.runInContext('loadSettings("general")', context);
     assert.equal(elements.get('securityTable').innerHTML, 'offener Entwurf');
 });
+
+test('Netzstart UI: Entwurf behaelt Funkmassnahme, Zahlen und Checkbox unabhaengig', () => {
+    const { context, elements } = createUi();
+    vm.runInContext('detailsDraft = createDetailsDraft({loxone_name:"lamp", verify_state:true}); updateDetailsDraft("power_switched", true); updateDetailsDraft("power_on_delay_ms", "500"); updateDetailsDraft("power_retry_window_ms", "12000")', context);
+    assert.equal(vm.runInContext('detailsDraft.values.power_on_delay_ms', context), 500);
+    assert.equal(vm.runInContext('detailsDraft.values.power_retry_window_ms', context), 12000);
+    assert.equal(vm.runInContext('detailsDraft.values.verify_state', context), true);
+    assert.equal(elements.get('details_reliability').disabled, true);
+    assert.equal(elements.get('details_powerOptions').hidden, false);
+    vm.runInContext('updateDetailsDraft("power_switched", false)', context);
+    assert.equal(elements.get('details_reliability').disabled, false);
+    assert.equal(vm.runInContext('detailsDraft.values.verify_state', context), true);
+});
+
+test('Netzstart UI: ungueltige Frist oder leeres Zahlenfeld wird nicht gespeichert', async () => {
+    const { context, elements } = createUi();
+    let saves = 0;
+    context.apiRequest = async () => { saves++; };
+    vm.runInContext('detailsDraft = createDetailsDraft({loxone_name:"lamp"}); updateDetailsDraft("power_on_delay_ms", "2000"); updateDetailsDraft("power_retry_window_ms", "2000")', context);
+    await vm.runInContext('saveDetailsSettings()', context);
+    assert.match(elements.get('detailsSaveStatus').textContent, /länger/);
+    vm.runInContext('updateDetailsDraft("power_on_delay_ms", "")', context);
+    await vm.runInContext('saveDetailsSettings()', context);
+    assert.equal(saves, 0);
+});

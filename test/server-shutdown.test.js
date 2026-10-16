@@ -129,6 +129,35 @@ test('F15: ohne Schutz bleibt HTTP offen, Aktivierung ohne Passwort scheitert, S
     await until(() => app.streams.size === 0);
 });
 
+test('HTTP: Netzstart-Einstellung speichern, ausloesen, ueber SSE bestaetigen und im Backup erhalten', { timeout: 20000 }, async t => {
+    const app = await fixture(t);
+    const saved = await app.request('/api/mapping/test_lamp/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sync_lox: false, ignore_dynamics: false, multi_sync: false, sync_offset_ms: 0,
+            power_switched: true, power_on_delay_ms: 0, power_retry_window_ms: 15000 })
+    });
+    const savedBody = await saved.json();
+    assert.equal(saved.status, 200, JSON.stringify(savedBody));
+    assert.equal(savedBody.mapping.power_switched, true);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(app.temp, 'mapping.json'), 'utf8'))[0].power_switched, true);
+    await app.request('/test_lamp/80', {}, false);
+    await until(() => app.puts.length === 1, app.output);
+    for (const stream of app.streams) stream.write('data: [{"type":"update","data":[{"id":"test-light","on":{"on":true},"dimming":{"brightness":80}}]}]\n\n');
+    await delay(450);
+    const row = (await (await app.request('/api/diagnostics/lampen')).json())[0];
+    assert.equal(row.startupStatus, 'confirmed');
+    assert.equal(row.bestaetigt, 1);
+    assert.equal(app.puts.length, 1);
+    const backup = await (await app.request('/api/system/backup?redactSecrets=true')).json();
+    assert.ok(JSON.stringify(backup).includes('"power_switched":true'));
+    const invalid = await app.request('/api/mapping/test_lamp/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sync_lox: false, ignore_dynamics: false, multi_sync: false, sync_offset_ms: 0,
+            power_switched: true, power_on_delay_ms: 2000, power_retry_window_ms: 2000 })
+    });
+    assert.equal(invalid.status, 400);
+});
+
 for (const options of [{}, { multiSync: true }, { multiSync: true, disableLogDisk: true }]) {
     test(`HTTP: Lampendiagnose ohne Debug und Logs nach UI-Speichern ${JSON.stringify(options)}`, { timeout: 20000 }, async t => {
         const app = await fixture(t, true, options);

@@ -10,9 +10,17 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.13-dev Mehrlampensteuerung
+## 🚀 Features V2.5.14-dev Mehrlampensteuerung
 
-### Änderungen in 2.5.13-dev
+### Änderungen in 2.5.14-dev
+
+- Netzgeschaltete Lampen können pro Gerät gekennzeichnet werden: sofortiger Erstversuch, optionale Anlaufwartezeit und begrenzter Wiederanlauf nur für diese Lampe.
+- Wartezeiten und Netzstart-Timeouts blockieren die normale Befehlswarteschlange nicht. Ein Netzstart-PUT darf neben einem normalen PUT laufen; sämtliche Starts bleiben global ratenbegrenzt. Native Hue-Gruppen bleiben Gruppenbefehle.
+- Nachlesen/Wiederholen greift auch bei vorübergehend fehlgeschlagenem Erstbefehl. Null-Übergänge werden für dimmbare Werte ausdrücklich als `dynamics.duration: 0` gesendet; HTTPS-Verbindungen werden wiederverwendet.
+- Diagnose zeigt Netzstartstatus, Versuche und Anfragenfehler; erfolgreiche Zustandsabfragen zählen als Bestätigung. Korrekturen werden erst beim tatsächlichen Sendeversuch gezählt.
+- Sicherheitsaktualisierungen der indirekten Abhängigkeiten `proxy-addr` und `ip-address`.
+
+### Weiterhin enthalten
 
 - Zugriffsschutz bleibt bei unvollständiger Einrichtung wirksam; gespeicherte Texte werden sicher dargestellt.
 - Neuere Anforderungen gewinnen auch bei überlappenden Hue-Gruppen, verzögerter Mitgliederauflösung und Retries. Der gemeinsame Scheduler und die fünf Multi-Sync-Gruppen bleiben erhalten.
@@ -37,7 +45,7 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
     * positiver Offset = später senden
     * sinnvoller Bereich: ca. -500 ms bis +1000 ms
 * **Sammelfenster für gleichzeitige Szenen:** Mehrere Loxone-Kommandos werden kurz gesammelt und dann gebündelt an die Hue Bridge gesendet.
-* **Batch-Steuerung:** Lampen werden in logischen Blöcken seriell gesendet. Die globale Rate gilt auch innerhalb von Clustern, für Effekte und Wiederholungen.
+* **Batch-Steuerung:** Lampen werden in logischen Blöcken geplant. Normale Befehle laufen seriell; ein Netzstart-PUT darf überlappen. Die globale Rate gilt auch innerhalb von Clustern, für Effekte und Wiederholungen.
 * **Einstellbares Hue-Limit:** Die maximale Anzahl Lichtbefehle pro Sekunde kann angepasst werden, um je nach Lampenanzahl das schnellste stabile Limit der eigenen Bridge zu finden.
 * **Timing-Test im UI:** Gemeinsame Berechnung mit dem Backend für Lampenanzahl, Mindestabstände, Reihenfolge und Planrate. Keine Messung der tatsächlichen Lampenreaktion.
 * **Gemeinsame Warteschlange:** Alle Hue-PUTs laufen durch denselben Scheduler und die globale Begrenzung. Multi-Sync-Lampen verwenden ihren Gruppen-/Cluster-Zeitplan; normale Einzel- und Gruppenbefehle ihre reguläre Drosselung.
@@ -177,7 +185,7 @@ Dieses Repository verwendet zwei Branches:
 | Branch | Version | Zweck |
 | --- | --- | --- |
 | `main` | `2.5.12` | Stabiler Stand für den normalen Betrieb, inkl. Mehrlampengruppen, Ablauf-Clustern, Effekt-Fallback und Stabilitätskorrekturen |
-| `develop` | `2.5.13-dev` | Weiterentwicklungsstand mit zusätzlichen Sicherheits-, Reihenfolge-, Diagnose- und Bedienungskorrekturen; noch nicht in `main` enthalten |
+| `develop` | `2.5.14-dev` | Weiterentwicklungsstand mit Netzstart-Behandlung sowie Sicherheits-, Reihenfolge-, Diagnose- und Bedienungskorrekturen; noch nicht in `main` enthalten |
 
 Wenn kein Branch angegeben wird, wird normalerweise `main` installiert. Das ist die empfohlene Variante für den normalen Betrieb.
 
@@ -203,7 +211,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.13-dev
+Version: 2.5.14-dev
 ```
 
 ### Zurück auf main
@@ -348,8 +356,11 @@ Sync-Offset      = Feintuning pro einzelner Lampe
 | Einstellung | Wirkung |
 | --- | --- |
 | Loxone Sync | Statusänderungen dieser Lampe werden per UDP an Loxone zurückgemeldet |
-| Dynamics ignorieren | Sendet Hue-Befehle ohne `dynamics.duration`. Das ist sinnvoll für reine Schaltaktoren oder wenn ein Gerät mit Hue Dynamics Probleme macht |
+| Dynamics ignorieren | Sendet bei dimmbaren Helligkeits-/Farbwerten ausdrücklich `dynamics.duration: 0`, damit kein Standardübergang entsteht. Reine Schaltaktoren erhalten keine Dynamics |
 | Bei unzuverlässiger Übertragung | Optionale Funkmaßnahme pro einzelner Lampe. Standard ist `Keine` |
+| Netzspannung erst mit Lichtbefehl | Aktiviert eine eigene, begrenzte Wiederanlaufbehandlung, wenn die Lampe am Wandschalter stromlos wird. Standard aus |
+| Anlaufwartezeit (ms) | Zusätzliche Wartezeit vor dem ersten Einzelbefehl beim Kaltstart, Standard 0, Bereich 0–10000. Bereits im Multi-Sync-Ablauf vergangene Zeit wird angerechnet |
+| Wiederanlaufzeit (ms) | Maximale Dauer ab Übergabe an den Netzstart, Standard 15000, Bereich 2000–60000. Höchstens 8 Sendeversuche und länger als die Anlaufwartezeit |
 | Mehrlampensynchronisierung | Diese einzelne Lampe nimmt am gemeinsamen Sammel-/Timing-Ablauf teil |
 | Gruppe | Zuordnung zu Gruppe A-E. Die Gruppennamen können in den globalen Einstellungen frei benannt werden, z. B. Wohnzimmer, Büro oder Küche |
 | Ablauf-Cluster | Gleicher frei gewählter Name fasst Lampen innerhalb derselben Gruppe zusammen. Ohne Namen gilt die bekannte Hue-Device-Zuordnung, ansonsten die einzelne Light-UUID als Fallback |
@@ -376,6 +387,25 @@ Die Funkmaßnahmen sind nur für einzelne Hue-Lampen gedacht, die sich im Zigbee
 Die drei Optionen schließen sich gegenseitig aus. Alte Nachprüfungen oder Wiederholungen werden verworfen, sobald ein neuerer Befehl für dieselbe Hue-UUID kommt. Gruppenbefehle lösen ihre Mitglieder auf und annullieren deren ältere Befehle und Nachsteuerungen. Unbeteiligte Lampen bleiben unverändert. Ist die Mitgliedschaft nicht auflösbar, wird der Gruppenbefehl abgelehnt; es werden nicht pauschal Nachsteuerungen anderer Lampen verworfen.
 
 Die Zustandsprüfung erfolgt nach 15 bzw. 90 Sekunden, frühestens nach Ende der angeforderten Übergangszeit, solange noch keine vollständige Bestätigung von Ein/Aus und angeforderter Helligkeit vorliegt. Nach einer Bestätigung wird nicht weiter korrigiert. Eine spätere Bedienung über Hue-App oder Schalter darf dadurch nicht wieder rückgängig gemacht werden. Änderungen vor der ersten Bestätigung lassen sich im SSE nicht sicher nach Verursacher unterscheiden. Die Prüfung verifiziert keine Farben und ist keine Garantie für die sichtbare Lichtwirkung.
+
+Nachlesen und Wiederholen werden auch nach einem vorübergehenden Fehler des ersten PUTs gestartet, beispielsweise Timeout oder Hue `communication_error`. Permanente Fehler wie ungültige Parameter oder fehlende Berechtigung werden dadurch nicht endlos wiederholt.
+
+### Lampen mit geschalteter Netzspannung
+
+Wenn der Wandschalter gleichzeitig Strom und Loxone-Lichtbefehl auslöst, kann die Lampe noch starten oder ihre Zigbee-Verbindung wiederherstellen. Ein früherer Sync-Offset kann diese physische Startzeit nicht aufheben. Hue sieht für zuverlässig erreichbare smarte Lampen eine dauerhafte Stromversorgung vor, beispielsweise mit einem [Wandschaltermodul](https://www.philips-hue.com/de-de/support/article/hue-in-wall-solutions/000016). Die folgende Option ist eine begrenzte Software-Nachbehandlung, kein Ersatz für die Stromversorgung und keine Garantie für identische Einschaltzeiten.
+
+1. Unter **Lichter** den Eintrag der betroffenen Lampe öffnen.
+2. **Netzspannung erst mit Lichtbefehl** aktivieren. Bei einer mehrteiligen Leuchte jede getrennte Light-UUID einstellen, etwa Deckenlampe oben und unten.
+3. Zunächst **Anlaufwartezeit 0 ms**, **Wiederanlaufzeit 15000 ms** und **Sync-Offset 0 ms** verwenden; speichern. Die anderen Lampen bleiben unverändert.
+4. Strom einschalten und eine Szene senden; unter **Diagnose → Zuverlässigkeit der Lampenbefehle → Netzstart** prüfen. Anschließend schnelle Szenenwechsel und Ausschalten während des Starts testen.
+
+**Verhalten:** Nach dem Multi-Sync-Zeitplan wird ohne zusätzliche Standardwartezeit gesendet. Bei fehlender Bestätigung wird frühestens nach 300 ms bzw. nach der Übergangszeit nachgelesen. Falls bekannt, wird auch die Hue-Zigbee-Erreichbarkeit abgefragt, damit ein gespeicherter Lichtzustand einer unerreichbaren Lampe nicht als Erfolg zählt. Wiederholungsabstände steigen von 250 auf maximal 1000 ms; maximal 8 Versuche innerhalb der eingestellten Frist. Ein gemeldeter Wiederanschluss kann eine Anlaufwartezeit verkürzen. Eine bereits bestätigte, weiter erreichbare Lampe bekommt bei normalen Szenenwechseln keine zusätzliche Anlaufwartezeit.
+
+Nur der neueste Befehl derselben Lampe bleibt gültig. Ein neuer Szenenwert ersetzt den alten Sollwert, ohne eine noch laufende Anlauffrist ständig zu verlängern. **Aus** beendet ausstehende Einschaltwiederholungen und wird ohne Anlaufwartezeit einmal gesendet; ein bereits übertragenes Paket lässt sich nicht zurückholen. Neustart beendet alle Startaufträge. Es wird nicht unbegrenzt nachgeregelt. Ein physischer Stromausfall ist erst bekannt, wenn Hue ihn meldet oder ein Befehl scheitert; es gibt keine Rückmeldung vom Netzrelais.
+
+Die Netzstart-Behandlung ersetzt bei aktivierter Option die drei zusätzlichen Funkmaßnahmen dieser Lampe. Ihre gespeicherte Auswahl bleibt erhalten und wird nach Deaktivierung wieder verwendet. Normale Hue-Gruppen/Räume/Zonen bleiben **ein nativer Gruppenbefehl**; anschließend werden nur markierte Mitglieder geprüft und nötigenfalls einzeln korrigiert. Die Anlaufwartezeit verzögert keinen nativen Gruppenbefehl. Effekt-Fallbacks bleiben Einzellichtbefehle; bei Effekten werden Übertragungsfehler wiederholt, aber der sichtbare Effekt wird nicht über `on`/Helligkeit verifiziert. `alert` ist ein einmaliger Hinweis und wird nicht als Netzstart wiederholt.
+
+**Geschwindigkeit und Last:** Warte-/Prüftimer laufen außerhalb der gemeinsamen PUT-Warteschlange. Höchstens ein Netzstart-PUT darf neben einem normalen PUT laufen, mit höchstens 1200 ms Request-Timeout (bzw. verbleibender Frist). Normale Einzelbefehle, fünf Multi-Sync-Gruppen und Cluster behalten ihren Zeitplan. Auch Wiederholungen beachten die globale Rate und 429-Pausen. Zusätzliche Nachsteuerungen verbrauchen trotzdem Bridge-/Zigbee-Kapazität; eine unter allen Lastbedingungen völlig unveränderte Reaktionszeit ist daher nicht versprechbar. Die Timing-Vorschau ist weiterhin ein Plan ohne Startverzögerungen, Wiederholungen und tatsächliche Funklaufzeit.
 
 ### Gruppen und globale Multi-Sync Einstellungen
 
@@ -499,10 +529,12 @@ Der Tab **Diagnose** enthält zusätzlich eine Zuverlässigkeitstabelle für Lam
 | Wert | Bedeutung |
 | --- | --- |
 | Befehle | Anzahl der von loxHueBridge gesendeten logischen Lampenbefehle |
-| Bestätigt | Einmal pro Befehl, sobald alle angeforderten Ein/Aus- und Helligkeitsfelder durch SSE bestätigt wurden |
+| Bestätigt | Einmal pro Befehl, sobald alle angeforderten Ein/Aus- und Helligkeitsfelder durch SSE oder eine vollständige Zustandsabfrage bestätigt wurden |
 | Widersprüche | Höchstens einmal pro Befehl bei abweichenden SSE-Werten nach der Übergangszeit. Bereits abgeschlossene oder abgelöste Befehle werden nicht weiter verglichen |
 | Quote | Anteil der logischen Befehle mit einem erfassten Widerspruch, keine allgemeine Ausfallquote |
 | Communication Errors | Separate Hue-Fehlermeldungen; werden nicht zusätzlich als SSE-Widerspruch gezählt |
+| Anfragenfehler | Fehlgeschlagene Einzellicht-PUTs, einschließlich HTTP-/Netzwerkfehler und Hue-Fachfehler. Enthält auch Communication Errors; die Spalten nicht addieren |
+| Netzstart | Wartet, sendet, prüft, wiederholt, bestätigt, angenommen oder beendet/fehlgeschlagen; Anzahl der Einzellicht-Sendeversuche des letzten Startauftrags |
 | Verifiziert | Aktive Nachprüfungen durch `Zustand nachlesen und korrigieren` |
 | Nachgesteuert | Anzahl der erneut gesendeten Payloads nach bestätigter Abweichung |
 | Mapping | Loxone-/Hue-Zuordnung mit Device, Multi-Sync-Gruppe und Ablauf-Cluster |

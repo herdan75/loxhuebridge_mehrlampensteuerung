@@ -243,14 +243,19 @@
                     <th>Verifiziert</th>
                     <th>Nachgesteuert</th>
                     <th>Communication Errors</th>
+                    <th>Anfragenfehler</th>
+                    <th>Netzstart</th>
                     <th>Mapping</th>
                     <th>Letzter Widerspruch</th>
                 </tr></thead><tbody>`;
 
                 lampRows.forEach(row => {
                     const quote = Number(row.quote || 0);
-                    const problem = (row.widersprueche || 0) > 0 || (row.communicationErrors || 0) > 0;
-                    const color = !problem ? 'var(--success,#4caf50)' : (quote >= 10 ? 'red' : 'orange');
+                    const problem = (row.widersprueche || 0) > 0 || (row.requestErrors || 0) > 0 || (row.communicationErrors || 0) > 0;
+                    const pending = (row.bestaetigt || 0) < (row.befehle || 0);
+                    const color = problem ? (quote >= 10 ? 'red' : 'orange') : (pending ? 'var(--text-muted)' : 'var(--success,#4caf50)');
+                    const startupLabels = { waiting: 'Anlaufwartezeit', queued: 'Eingereiht', sending: 'Sendet', checking: 'Prüft Zustand', retrying: 'Wiederholt', confirmed: 'Bestätigt', accepted: 'Angenommen', off: 'Aus gesendet', expired: 'Zeit/Versuche ausgeschöpft', failed: 'Fehlgeschlagen', cancelled: 'Verworfen' };
+                    const startup = startupLabels[row.startupStatus] || '-';
                     const mapping = row.mapping || {};
                     const mappingText = [
                         mapping.deviceName ? `Device: ${escapeHtml(mapping.deviceName)}` : '',
@@ -269,6 +274,8 @@
                         <td style="text-align:right">${row.verifiziert || 0}</td>
                         <td style="text-align:right">${row.nachgesteuert || 0}</td>
                         <td style="text-align:right;color:${(row.communicationErrors || 0) ? 'orange' : 'inherit'}">${row.communicationErrors || 0}</td>
+                        <td style="text-align:right">${Number(row.requestErrors) || 0}</td>
+                        <td style="font-size:0.8em">${startup}${row.startupStatus ? `<br>${Number(row.startupAttempts) || 0} Versuch(e)` : ''}</td>
                         <td style="font-size:0.8em">${mappingText}</td>
                         <td style="font-size:0.8em">${last}</td>
                     </tr>`;
@@ -597,8 +604,9 @@
         return Number.isFinite(number) ? number : fallback;
     }
 
-    function infoLabel(label, tip) {
-        return `<span class="setting-label">${escapeHtml(label)} <span class="setting-help" tabindex="0" data-tip="${escapeHtml(tip)}">i</span></span>`;
+    function infoLabel(label, tip, controlId = '') {
+        const text = controlId ? `<label for="${escapeHtml(controlId)}">${escapeHtml(label)}</label>` : escapeHtml(label);
+        return `<span class="setting-label">${text} <span class="setting-help" tabindex="0" data-tip="${escapeHtml(tip)}">i</span></span>`;
     }
 
     function getMultiSyncFormSettings(groupId = 'a') {
@@ -1012,7 +1020,10 @@
                 sync_offset_ms: offset,
                 verify_state: entry.verify_state === true,
                 split_on: entry.split_on === true,
-                repeat_command: entry.repeat_command === true
+                repeat_command: entry.repeat_command === true,
+                power_switched: entry.power_switched === true,
+                power_on_delay_ms: entry.power_on_delay_ms ?? 0,
+                power_retry_window_ms: entry.power_retry_window_ms ?? 15000
             },
             values: {
                 sync_lox: entry.sync_lox === true,
@@ -1023,7 +1034,10 @@
                 sync_offset_ms: offset,
                 verify_state: entry.verify_state === true,
                 split_on: entry.split_on === true,
-                repeat_command: entry.repeat_command === true
+                repeat_command: entry.repeat_command === true,
+                power_switched: entry.power_switched === true,
+                power_on_delay_ms: entry.power_on_delay_ms ?? 0,
+                power_retry_window_ms: entry.power_retry_window_ms ?? 15000
             }
         };
     }
@@ -1059,6 +1073,18 @@
 
     function updateDetailsDraft(key, value) {
         if (!detailsDraft) return;
+        if (key === 'power_on_delay_ms' || key === 'power_retry_window_ms') {
+            detailsDraft.values[key] = value === '' ? NaN : Number(value);
+            return;
+        }
+        if (key === 'power_switched') {
+            detailsDraft.values.power_switched = value === true;
+            const options = document.getElementById('details_powerOptions');
+            if (options) options.hidden = !value;
+            const reliability = document.getElementById('details_reliability');
+            if (reliability) reliability.disabled = value === true;
+            return;
+        }
         if (key === 'sync_offset_ms') {
             const offset = normalizeSyncOffset(value, null);
             const statusEl = document.getElementById('detailsSaveStatus');
@@ -1125,6 +1151,12 @@
         }
 
         const body = { ...detailsDraft.values, sync_offset_ms: offset };
+        if (!Number.isInteger(body.power_on_delay_ms) || body.power_on_delay_ms < 0 || body.power_on_delay_ms > 10000
+            || !Number.isInteger(body.power_retry_window_ms) || body.power_retry_window_ms < 2000 || body.power_retry_window_ms > 60000
+            || body.power_retry_window_ms <= body.power_on_delay_ms) {
+            if (statusEl) statusEl.textContent = 'Anlaufwartezeit: 0–10000 ms. Wiederanlaufzeit: 2000–60000 ms, länger als die Anlaufwartezeit.';
+            return;
+        }
         if (statusEl) statusEl.textContent = 'Speichere...';
 
         try {
@@ -1210,7 +1242,7 @@
 
                 <div class="settings-card" style="display:${entry.hue_type === 'light' ? 'block' : 'none'};">
                     <div style="font-weight:500; margin-bottom:6px;">Bei unzuverlässiger Übertragung</div>
-                    <select onchange="updateDetailsDraft('reliability_mode', this.value)" style="width:100%; padding:8px;">
+                    <select id="details_reliability" ${detailsDraft.values.power_switched ? 'disabled' : ''} onchange="updateDetailsDraft('reliability_mode', this.value)" style="width:100%; padding:8px;">
                         <option value="none" ${getReliabilityMode(detailsDraft.values) === 'none' ? 'selected' : ''}>Keine - Befehl einmal senden</option>
                         <option value="verify_state" ${getReliabilityMode(detailsDraft.values) === 'verify_state' ? 'selected' : ''}>Zustand nachlesen und korrigieren (empfohlen)</option>
                         <option value="split_on" ${getReliabilityMode(detailsDraft.values) === 'split_on' ? 'selected' : ''}>Einschalten aufteilen</option>
@@ -1220,7 +1252,24 @@
                         Für einzelne Lampen mit Funkproblemen. Nachlesen prüft später on/Helligkeit und sendet nur bei Abweichung erneut. Aufteilen sendet erst on=true und kurz danach Helligkeit/Farbe. Wiederholen sendet denselben Befehl einmal erneut.
                     </div>
                 </div>
-                
+                ${entry.hue_type === 'light' ? `
+                <div class="power-start-settings">
+                    <div class="power-start-toggle">
+                        <input id="details_powerSwitched" type="checkbox" ${detailsDraft.values.power_switched ? 'checked' : ''} onchange="updateDetailsDraft('power_switched', this.checked)">
+                        ${infoLabel('Netzspannung erst mit Lichtbefehl', 'Für Lampen, die am Wandschalter stromlos werden. Standard: sofort senden, bei Startproblemen begrenzt wiederholen. Nur der neueste Befehl zählt. Andere Lampen warten nicht auf den Start. Ersetzt für diese Lampe die Funkmaßnahme oben; Wiederholungen nutzen weiterhin die gemeinsame Bridge-Rate.', 'details_powerSwitched')}
+                    </div>
+                    <div id="details_powerOptions" ${detailsDraft.values.power_switched ? '' : 'hidden'}>
+                        <label class="power-start-field" for="details_powerDelay">
+                            ${infoLabel('Anlaufwartezeit (ms)', 'Standard 0: erster Versuch ohne zusätzliche Wartezeit. Nur erhöhen, wenn die Lampe nach Stromzufuhr grundsätzlich noch nicht empfangsbereit ist. Gilt beim Kaltstart, nicht bei normalen Szenenwechseln einer bereits bestätigten Lampe. Ein gemeldeter Wiederanschluss kann die Wartezeit verkürzen.')}
+                            <input id="details_powerDelay" type="number" min="0" max="10000" step="1" value="${Number(detailsDraft.values.power_on_delay_ms)}" oninput="updateDetailsDraft('power_on_delay_ms', this.value)">
+                        </label>
+                        <label class="power-start-field" for="details_powerWindow">
+                            ${infoLabel('Wiederanlaufzeit (ms)', 'Standard 15000: maximal 15 Sekunden ab Übergabe an den Netzstart, höchstens 8 Sendeversuche. Muss länger als die Anlaufwartezeit sein. Aus beendet den Start und wird ohne Anlaufwartezeit einmal gesendet. Keine unbegrenzten Wiederholungen. Ein Neustart der Lampe selbst lässt sich nicht beschleunigen.')}
+                            <input id="details_powerWindow" type="number" min="2000" max="60000" step="1" value="${Number(detailsDraft.values.power_retry_window_ms)}" oninput="updateDetailsDraft('power_retry_window_ms', this.value)">
+                        </label>
+                    </div>
+                </div>` : ''}
+
                 <div class="settings-card" style="display:${entry.hue_type === 'light' ? 'block' : 'none'};">
                     <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
                         <input type="checkbox" ${detailsDraft.values.multi_sync === true ? 'checked' : ''} onchange="updateDetailsDraft('multi_sync', this.checked)"> 

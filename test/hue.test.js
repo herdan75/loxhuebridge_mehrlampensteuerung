@@ -1117,7 +1117,7 @@ test('Review F07: Reine Dimmer und Schaltsteckdosen erhalten nur unterstuetzte F
     axiosPutCalls.length = 0;
     await hueManager.executeCommand({ hue_uuid: 'review-dimmer', hue_type: 'light', loxone_name: 'dimmer' }, '50050050');
     await hueManager.executeCommand({ hue_uuid: 'review-plug', hue_type: 'light', loxone_name: 'plug' }, '50050050', 500);
-    assert.deepStrictEqual(axiosPutCalls[0].payload, { on: { on: true }, dimming: { brightness: 50 } });
+    assert.deepStrictEqual(axiosPutCalls[0].payload, { on: { on: true }, dimming: { brightness: 50 }, dynamics: { duration: 0 } });
     assert.deepStrictEqual(axiosPutCalls[1].payload, { on: { on: true } });
 });
 
