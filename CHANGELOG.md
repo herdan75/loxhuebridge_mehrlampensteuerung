@@ -7,6 +7,7 @@
 - Geräte-Detailfenster mit validierten Zahlenfeldern und Infotexten; Netzstart ersetzt die zusätzlichen Funkmaßnahmen derselben Lampe, ohne deren gespeicherte Auswahl zu verlieren.
 
 ### Korrekturen und Diagnose
+- Globale PUT-Abstände beginnen am tatsächlichen Request-Aufruf; synchrone Diagnosearbeit vor dem Senden verkürzt den Mindestabstand nicht mehr. Mit deterministischem Regressionstest abgesichert.
 - Nachlesen/Wiederholen greift auch bei transientem Fehler des ersten PUTs. Unvollständige GET-Daten gelten nicht mehr als erfolgreiche Zustandsprüfung.
 - Hue-Fachfehler beim Ressourcenabruf werden auch bei HTTP 200 erkannt; bekannte Gerätefähigkeiten bleiben bei solchen Ladefehlern erhalten.
 - Erfolgreiche Zustandsabfragen zählen als Bestätigung; Nachsteuerungen erst beim tatsächlichen Senden. Diagnose ergänzt Anfragenfehler, Netzstartstatus und Versuchszähler.

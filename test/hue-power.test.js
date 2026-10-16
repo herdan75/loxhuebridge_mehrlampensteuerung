@@ -8,6 +8,26 @@ async function until(check) {
     while (!check()) { assert.ok(Date.now() < end, 'condition timed out'); await wait(5); }
 }
 
+test('PUT-Rate beginnt nach der Diagnosearbeit am tatsaechlichen Request', async t => {
+    const f = fixture(t, { config: { multiLightControl: { bridgeMaxCommandsPerSecond: 20 } } });
+    t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 });
+    const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
+    const put = f.hue._internals.putHueWithRateLimitRetry;
+    const first = put('https://fixture.invalid/light/one', {}, {
+        onAttempt: () => t.mock.timers.tick(35)
+    });
+    const second = put('https://fixture.invalid/light/two', {});
+    await flush();
+    assert.equal(f.calls.puts.length, 1);
+    t.mock.timers.tick(49);
+    await flush();
+    assert.equal(f.calls.puts.length, 1, 'zweiter PUT darf nicht vor Ablauf von 50 ms starten');
+    t.mock.timers.tick(1);
+    await flush();
+    await Promise.all([first, second]);
+    assert.equal(f.calls.puts[1].at - f.calls.puts[0].at, 50);
+});
+
 test('Netzstart: langsames PUT blockiert normale Lampen nicht, gemeinsame Rate bleibt erhalten', async t => {
     let release;
     const f = fixture(t, {
