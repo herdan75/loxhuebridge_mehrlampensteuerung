@@ -11,6 +11,8 @@
     --radius: 12px; 
     --input-bg: #ffffff; 
     --modal-overlay: rgba(0,0,0,0.5); 
+    --section-bg: #eee;
+    --subtle-bg: #f8f9fa;
 }
 
 @media (prefers-color-scheme: dark) { 
@@ -22,6 +24,8 @@
         --border: #38383a; 
         --input-bg: #2c2c2e; 
         --modal-overlay: rgba(0,0,0,0.8); 
+        --section-bg: #303034;
+        --subtle-bg: #252528;
     } 
 }
 
@@ -55,6 +59,9 @@ h1 {
 }
 
 .tab { 
+    border: 0;
+    background: transparent;
+    font: inherit;
     padding: 8px 16px; 
     border-radius: 8px; 
     cursor: pointer; 
@@ -185,7 +192,16 @@ button.add-btn {
 .type-sensor { border-left-color: var(--sensor); } 
 .type-button { border-left-color: var(--button); }
 
-.mapping-lox { font-family: monospace; font-weight: 700; }
+.mapping-lox { display: block; font-family: monospace; font-weight: 700; }
+.mapping-hue { display: block; }
+.mapping-name { min-width: 0; overflow-wrap: anywhere; }
+.mapping-open { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 1; min-width: 0; }
+.mapping-open .status-badges { flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.mapping-item { gap: 8px; }
+.grid > *, .card, #diagContent { min-width: 0; }
+.header-actions { gap: 8px; }
+button:disabled { opacity: 0.65; cursor: wait; }
+:focus-visible { outline: 2px solid var(--button); outline-offset: 3px; }
 .mapping-hue { font-size: 0.9rem; color: var(--text-muted); }
 
 .status-badges { display: flex; gap: 5px; margin-right: 10px; align-items: center; }
@@ -319,6 +335,9 @@ button.add-btn {
 .settings-table { width: 100%; border-collapse: collapse; }
 .settings-table td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .settings-table td:first-child { font-weight: bold; color: var(--text-muted); width: 40%; }
+.settings-table { table-layout: fixed; }
+.settings-table td, .details-table td { overflow-wrap: anywhere; }
+.numeric-entry { flex: 0 0 82px; width: 82px !important; padding: 6px !important; }
 
 /* --- SWITCH / TOGGLE --- */
 .switch { position: relative; display: inline-block; width: 40px; height: 22px; vertical-align: middle; }
@@ -405,6 +424,11 @@ input:checked + .slider:before { transform: translateX(18px); }
     .modal-actions { flex-wrap: wrap; }
     .modal-actions .btn-sec,
     .modal-actions .btn-prim { flex: 1 1 160px; }
+    .mapping-open { align-items: flex-start; flex-direction: column; gap: 6px; }
+    .mapping-open .status-badges { justify-content: flex-start; }
+    .card { padding: 16px; }
+    .slider-container { gap: 6px; }
+    .slider-val { flex-basis: 52px; font-size: 0.8rem; }
 }
 
 /* --- DETAILS TABLE & DIAGNOSTICS --- */
@@ -412,10 +436,14 @@ input:checked + .slider:before { transform: translateX(18px); }
 .details-table td { padding: 8px 0; border-bottom: 1px solid var(--border); color: var(--text-main); }
 .details-table td:first-child { font-weight: bold; color: var(--text-muted); width: 40%; }
 
-.diag-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.diag-scroll { max-width: 100%; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.diag-scroll .settings-table { table-layout: auto; min-width: 600px; }
+.diag-scroll .diag-table { min-width: 980px; }
 .diag-table { min-width: 980px; }
 .diag-table th,
 .diag-table td { white-space: nowrap; }
+.diag-table th { padding: 8px 12px; text-align: left; }
+.diag-table td { padding: 8px 12px; }
 .diag-table td:first-child,
 .diag-table th:first-child { white-space: normal; min-width: 210px; }
 
@@ -424,8 +452,22 @@ input:checked + .slider:before { transform: translateX(18px); }
 .mac-addr { font-family: monospace; color: #888; font-size: 0.8em; }
 .diag-h3 { margin: 20px 0 10px 0; font-size: 1rem; color: var(--text-main); border-bottom: 2px solid var(--border); padding-bottom: 5px; }        /* Macht die Cards visuell als klickbar erkennbar */
         .mapping-item { cursor: pointer; transition: background 0.2s, transform 0.1s; }
-        .mapping-item:hover { background: #f8f9fa; transform: translateY(-1px); }
+        .mapping-item:hover { background: var(--subtle-bg); }
         .slider-container { display: flex; align-items: center; gap: 10px; width: 100%; }
         .slider-container input[type="range"] { flex: 1; min-width: 0; }
         .slider-val { font-family: monospace; flex: 0 0 60px; text-align: right; color: var(--accent); font-weight: bold; }
         .settings-card { padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 10px; }
+/* Per-light mains startup controls reuse the modal's existing flow. */
+.power-start-settings { margin: 16px 0; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.power-start-toggle { display: flex; align-items: flex-start; gap: 10px; position: relative; }
+.power-start-toggle input[type="checkbox"] { margin-left: 3px; flex: 0 0 auto; }
+.power-start-toggle .setting-label > label { margin: 0; display: inline; font: inherit; color: inherit; cursor: pointer; }
+.power-start-settings .setting-help { flex: 0 0 18px; position: static; }
+.power-start-settings .setting-help::after { left: 0; right: 0; top: 100%; transform: none; width: auto; box-sizing: border-box; }
+.power-start-field { display: grid; grid-template-columns: minmax(0, 1fr) 120px; align-items: center; gap: 12px; margin-top: 12px; position: relative; }
+.power-start-field input { width: 100%; min-width: 0; box-sizing: border-box; }
+@media (max-width: 420px) {
+    .power-start-field { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .power-start-field input { width: 120px; justify-self: end; }
+}
+.diagnostics-updated { color: var(--text-muted); font-size: 0.85rem; }

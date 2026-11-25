@@ -116,6 +116,54 @@ test('F15: echter HTTP-Server mit Auth, offenen Loxone-Befehlen, SSE und API-Neu
     assert.equal(fs.existsSync(path.join(app.temp, 'logs.db')), true);
 });
 
+test('HTTP: komprimierte JSON-Anfragen werden vor dem Entpacken abgelehnt', { timeout: 20000 }, async t => {
+    const app = await fixture(t);
+    const { gzipSync } = require('node:zlib');
+    const response = await app.request('/api/settings/debug', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip' },
+        body: Buffer.concat([gzipSync('{"active":true}'), Buffer.from('trailing data')])
+    }, false);
+    assert.equal(response.status, 415);
+    assert.equal((await app.request('/api/settings', {}, false)).status, 401);
+    assert.equal((await (await app.request('/api/settings')).json()).debug, false);
+});
+
+test('HTTP: backups download as JSON; invalid restore leaves settings and auth intact', { timeout: 20000 }, async t => {
+    const app = await fixture(t);
+    let backup;
+    for (const suffix of ['', '?redactSecrets=true']) {
+        const response = await app.request('/api/system/backup' + suffix);
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get('content-disposition'), /^attachment; filename="loxHueBridge_.*\.json"$/);
+        assert.equal(response.headers.get('cache-control'), 'no-store');
+        const data = await response.json();
+        if (!suffix) backup = data;
+        else {
+            assert.match(response.headers.get('content-disposition'), /ohne-Zugangsdaten/);
+            assert.ok(!JSON.stringify(data).includes('pbkdf2$'));
+        }
+    }
+    const previousConfig = fs.readFileSync(path.join(app.temp, 'config.json'), 'utf8');
+    const previousMapping = fs.readFileSync(path.join(app.temp, 'mapping.json'), 'utf8');
+    for (const config of ['not-an-object', [], { ...backup.config, authEnabled: 'true' }, { ...backup.config, loxonePort: -1 }]) {
+        const response = await app.request('/api/system/restore', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...backup, config })
+        });
+        assert.equal(response.status, 400);
+        assert.equal(fs.readFileSync(path.join(app.temp, 'config.json'), 'utf8'), previousConfig);
+        assert.equal(fs.readFileSync(path.join(app.temp, 'mapping.json'), 'utf8'), previousMapping);
+        assert.equal((await app.request('/api/settings', {}, false)).status, 401);
+    }
+    const restored = await app.request('/api/system/restore', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(backup)
+    });
+    assert.equal(restored.status, 200);
+    assert.equal((await restored.json()).success, true);
+    assert.deepEqual(await app.exited, { code: 0, signal: null });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(app.temp, 'config.json'), 'utf8')), backup.config);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(app.temp, 'mapping.json'), 'utf8')), backup.mapping);
+});
+
 test('F15: ohne Schutz bleibt HTTP offen, Aktivierung ohne Passwort scheitert, SIGTERM schliesst Prozess', { timeout: 20000 }, async t => {
     const app = await fixture(t, false);
     assert.equal((await app.request('/api/settings', {}, false)).status, 200);
@@ -127,6 +175,35 @@ test('F15: ohne Schutz bleibt HTTP offen, Aktivierung ohne Passwort scheitert, S
     assert.deepEqual(await app.exited, { code: 0, signal: null });
     assert.match(app.output(), /SIGTERM empfangen/);
     await until(() => app.streams.size === 0);
+});
+
+test('HTTP: Netzstart-Einstellung speichern, ausloesen, ueber SSE bestaetigen und im Backup erhalten', { timeout: 20000 }, async t => {
+    const app = await fixture(t);
+    const saved = await app.request('/api/mapping/test_lamp/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sync_lox: false, ignore_dynamics: false, multi_sync: false, sync_offset_ms: 0,
+            power_switched: true, power_on_delay_ms: 0, power_retry_window_ms: 15000 })
+    });
+    const savedBody = await saved.json();
+    assert.equal(saved.status, 200, JSON.stringify(savedBody));
+    assert.equal(savedBody.mapping.power_switched, true);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(app.temp, 'mapping.json'), 'utf8'))[0].power_switched, true);
+    await app.request('/test_lamp/80', {}, false);
+    await until(() => app.puts.length === 1, app.output);
+    for (const stream of app.streams) stream.write('data: [{"type":"update","data":[{"id":"test-light","on":{"on":true},"dimming":{"brightness":80}}]}]\n\n');
+    await delay(450);
+    const row = (await (await app.request('/api/diagnostics/lampen')).json())[0];
+    assert.equal(row.startupStatus, 'confirmed');
+    assert.equal(row.bestaetigt, 1);
+    assert.equal(app.puts.length, 1);
+    const backup = await (await app.request('/api/system/backup?redactSecrets=true')).json();
+    assert.ok(JSON.stringify(backup).includes('"power_switched":true'));
+    const invalid = await app.request('/api/mapping/test_lamp/settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sync_lox: false, ignore_dynamics: false, multi_sync: false, sync_offset_ms: 0,
+            power_switched: true, power_on_delay_ms: 2000, power_retry_window_ms: 2000 })
+    });
+    assert.equal(invalid.status, 400);
 });
 
 for (const options of [{}, { multiSync: true }, { multiSync: true, disableLogDisk: true }]) {

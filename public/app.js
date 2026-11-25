@@ -4,6 +4,9 @@
     let status = {};
     let detectedHistory = [];
     let logInterval = null;
+    let diagnosticsInterval = null;
+    let diagnosticsLoadId = 0;
+    let lampDiagnosticsRequest = null;
     let allSelected = false;
     let currentLogFilter = 'ALL';
     let cachedLogs = [];
@@ -12,6 +15,15 @@
     let multiLightControlSettings = { groups: MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}` })) };
     let securitySettings = { authEnabled: false, authUser: 'admin', passwordConfigured: false };
     let detailsDraft = null;
+    let detailsBusy = false;
+    let statusBusy = false;
+    let settingsDirty = false;
+    let securityDirty = false;
+    let settingsBusy = false;
+    let securityBusy = false;
+    let settingsLoadId = 0;
+    let modalReturnFocus = null;
+    let modalBodyOverflow = '';
 
     function debugLog(msg) { console.log(`[UI] ${msg}`); }
 
@@ -28,8 +40,20 @@
     }
 
     function setTab(tab) {
+        if (tab === currentTab) return;
+        if (currentTab === 'system') {
+            if (settingsBusy || securityBusy) return;
+            if ((settingsDirty || securityDirty) && !confirm('Ungespeicherte Einstellungen verwerfen?')) return;
+            settingsDirty = false;
+            securityDirty = false;
+            settingsLoadId++;
+            document.getElementById('securityTable').innerHTML = '';
+        }
         debugLog(`Tab: ${tab}`);
         currentTab = tab;
+        diagnosticsLoadId++;
+        clearInterval(diagnosticsInterval);
+        diagnosticsInterval = null;
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
         const hint = document.getElementById('hintAll');
@@ -59,6 +83,8 @@
     // --- Hilfsfunktion für einheitliche Batteriewarnungen ---
     function getBatteryHTML(bat) {
         if (bat === undefined || bat === null) return { badge: '', textStyle: '' };
+        bat = safeNumber(bat, null);
+        if (bat === null) return { badge: '', textStyle: '' };
         
         let color = '';
         let badgeStyle = '';
@@ -84,10 +110,14 @@
     async function loadDiagnostics() {
         const div = document.getElementById('diagContent');
         if(!div) return;
+        const loadId = ++diagnosticsLoadId;
+        clearInterval(diagnosticsInterval);
+        diagnosticsInterval = null;
         div.innerHTML = '<div style="text-align:center">Lade Daten...</div>';
         
         await loadMappings();
         await loadStatus();
+        if (loadId !== diagnosticsLoadId) return;
 
         const typeConfig = {
             'light':  { icon: '💡', label: 'Licht', order: 1 },
@@ -124,10 +154,10 @@
             if (st.temp !== undefined) lastVal += `${st.temp}°C `;
             const tConf = typeConfig[m.hue_type] || {icon:'❓', label: m.hue_type};
             html += `<tr>
-                <td style="${textStyle}"><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:#666">${escapeHtml(m.hue_name)}</div></td>
-                <td><span class="badge" style="background:#f1f3f5;color:#333; border:1px solid #ddd">${escapeHtml(tConf.icon)} ${escapeHtml(tConf.label)}</span></td>
+                <td style="${textStyle}"><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:var(--text-muted)">${escapeHtml(m.hue_name)}</div></td>
+                <td><span class="badge" style="background:var(--subtle-bg);color:var(--text-main); border:1px solid #ddd">${escapeHtml(tConf.icon)} ${escapeHtml(tConf.label)}</span></td>
                 <td>${badge || '-'}</td>
-                <td style="font-size:0.8em; font-family:monospace; color:#555">${lastVal}</td>
+                <td style="font-size:0.8em; font-family:monospace; color:var(--text-muted)">${escapeHtml(lastVal)}</td>
             </tr>`;
         });
         html += '</tbody></table>';
@@ -138,6 +168,7 @@
             const bridgeRes = await fetch('/api/diagnostics/bridge');
             if (!bridgeRes.ok) throw new Error('Bridge API nicht verfügbar');
             const diagData = await bridgeRes.json();
+            if (loadId !== diagnosticsLoadId) return;
             if (!diagData) throw new Error('Keine Daten');
 
             // Zigbee Bridge-Info
@@ -145,8 +176,8 @@
             if (diagData.zigbee?.bridge) {
                 const b = diagData.zigbee.bridge;
                 bridgeHtml += `<table class="settings-table"><tbody>`;
-                if (b.bridge_id)    bridgeHtml += `<tr><td>Bridge ID</td><td style="font-family:monospace">${b.bridge_id}</td></tr>`;
-                if (b.time_zone?.time_zone) bridgeHtml += `<tr><td>Zeitzone</td><td>${b.time_zone.time_zone}</td></tr>`;
+                if (b.bridge_id)    bridgeHtml += `<tr><td>Bridge ID</td><td style="font-family:monospace">${escapeHtml(b.bridge_id)}</td></tr>`;
+                if (b.time_zone?.time_zone) bridgeHtml += `<tr><td>Zeitzone</td><td>${escapeHtml(b.time_zone.time_zone)}</td></tr>`;
                 bridgeHtml += `</tbody></table>`;
             }
 
@@ -184,11 +215,11 @@
                     const yes = '<span style="color:var(--success,#4caf50)">✅</span>';
                     const no  = '<span style="color:#ccc">❌</span>';
                     const effects = caps.supportedEffects?.filter(e => e !== 'no_effect').map(e =>
-                        `<span class="badge" style="font-size:0.75em;background:#f0f0f0">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
+                        `<span class="badge" style="font-size:0.75em;background:var(--subtle-bg)">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
                     const timedFx = caps.supportedTimedEffects?.filter(e => e !== 'no_effect').map(e =>
                         `<span class="badge" style="font-size:0.75em;background:#e8f5e9">${e}</span>`).join(' ') || '<span style="color:#ccc">–</span>';
                     capsHtml += `<tr>
-                        <td><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:#666">${escapeHtml(m.hue_name)}</div></td>
+                        <td><div style="font-weight:bold">${escapeHtml(m.loxone_name)}</div><div style="font-size:0.8em;color:var(--text-muted)">${escapeHtml(m.hue_name)}</div></td>
                         <td style="text-align:center">${caps.supportsDimming ? yes : no}</td>
                         <td style="text-align:center">${caps.supportsColor  ? yes : no}</td>
                         <td style="text-align:center">${caps.supportsCt     ? yes : no}</td>
@@ -204,19 +235,63 @@
             div.innerHTML += bridgeHtml + capsHtml;
 
         } catch(e) {
+            if (loadId !== diagnosticsLoadId) return;
             div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Bridge-Diagnose nicht verfügbar: ${escapeHtml(e.message)}</div>`;
         }
 
+        div.innerHTML += '<section id="lampDiagnostics"><h3>Zuverlässigkeit der Lampenbefehle</h3><p id="lampDiagnosticsUpdated" class="diagnostics-updated"></p><p id="lampDiagnosticsError" role="status"></p><div id="lampDiagnosticsRows"></div></section>';
+        div.querySelectorAll?.('table').forEach(table => {
+            if (table.parentElement.classList.contains('diag-scroll')) return;
+            const scroll = document.createElement('div');
+            scroll.className = 'diag-scroll';
+            scroll.tabIndex = 0;
+            scroll.setAttribute('role', 'region');
+            scroll.setAttribute('aria-label', 'Diagnosetabelle');
+            table.before(scroll);
+            scroll.appendChild(table);
+        });
+        await loadLampDiagnostics(loadId);
+        if (loadId === diagnosticsLoadId && currentTab === 'diag') {
+            diagnosticsInterval = setInterval(() => loadLampDiagnostics(loadId), 2000);
+        }
+    }
+
+    async function loadLampDiagnostics(loadId = diagnosticsLoadId) {
+        if (currentTab !== 'diag' || loadId !== diagnosticsLoadId || lampDiagnosticsRequest?.loadId === loadId) return;
+        const request = { loadId };
+        lampDiagnosticsRequest = request;
         try {
-            const lampRes = await fetch('/api/diagnostics/lampen');
-            if (!lampRes.ok) throw new Error('Lampendiagnose nicht verfügbar');
-            const lampRows = await lampRes.json();
-            let lampHtml = '<h3 style="margin-top: 30px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">📶 Zuverlässigkeit der Lampenbefehle</h3>';
+            const lampRows = await apiRequest('/api/diagnostics/lampen');
+            if (loadId !== diagnosticsLoadId || currentTab !== 'diag') return;
+            if (!Array.isArray(lampRows)) throw new Error('Ungültige Lampendiagnose');
+            const div = document.getElementById('lampDiagnosticsRows');
+            if (!div) return;
+            const html = lampDiagnosticsHtml(lampRows);
+            if (div._diagnosticsHtml !== html) {
+                const left = div.querySelector?.('.diag-scroll')?.scrollLeft || 0;
+                div.innerHTML = html;
+                div._diagnosticsHtml = html;
+                const scroll = div.querySelector?.('.diag-scroll');
+                if (scroll) scroll.scrollLeft = left;
+            }
+            document.getElementById('lampDiagnosticsUpdated').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+            document.getElementById('lampDiagnosticsError').textContent = '';
+        } catch (e) {
+            if (loadId === diagnosticsLoadId && currentTab === 'diag') {
+                document.getElementById('lampDiagnosticsError').textContent = 'Aktualisierung fehlgeschlagen: ' + e.message;
+            }
+        } finally {
+            if (lampDiagnosticsRequest === request) lampDiagnosticsRequest = null;
+        }
+    }
+
+    function lampDiagnosticsHtml(lampRows) {
+            let lampHtml = '';
 
             if (!lampRows.length) {
                 lampHtml += `<p style="color:var(--text-muted)">Noch keine Lampenbefehle seit dem letzten Neustart erfasst.</p>`;
             } else {
-                lampHtml += `<div class="diag-scroll"><table class="settings-table diag-table"><thead><tr>
+                lampHtml += `<div class="diag-scroll" tabindex="0" role="region" aria-label="Zuverlässigkeit der Lampenbefehle"><table class="settings-table diag-table"><thead><tr>
                     <th>Loxone Name</th>
                     <th>Befehle</th>
                     <th>Bestätigt</th>
@@ -225,18 +300,23 @@
                     <th>Verifiziert</th>
                     <th>Nachgesteuert</th>
                     <th>Communication Errors</th>
+                    <th>Anfragenfehler</th>
+                    <th>Netzstart</th>
                     <th>Mapping</th>
                     <th>Letzter Widerspruch</th>
                 </tr></thead><tbody>`;
 
                 lampRows.forEach(row => {
                     const quote = Number(row.quote || 0);
-                    const problem = (row.widersprueche || 0) > 0 || (row.communicationErrors || 0) > 0;
-                    const color = !problem ? 'var(--success,#4caf50)' : (quote >= 10 ? 'red' : 'orange');
+                    const problem = (row.widersprueche || 0) > 0 || (row.requestErrors || 0) > 0 || (row.communicationErrors || 0) > 0;
+                    const pending = (row.bestaetigt || 0) < (row.befehle || 0);
+                    const color = problem ? (quote >= 10 ? 'red' : 'orange') : (pending ? 'var(--text-muted)' : 'var(--success,#4caf50)');
+                    const startupLabels = { waiting: 'Anlaufwartezeit', queued: 'Eingereiht', sending: 'Sendet', checking: 'Prüft Zustand', retrying: 'Wiederholt', confirmed: 'Bestätigt', accepted: 'Angenommen', off: 'Aus gesendet', expired: 'Zeit/Versuche ausgeschöpft', failed: 'Fehlgeschlagen', cancelled: 'Verworfen' };
+                    const startup = startupLabels[row.startupStatus] || '-';
                     const mapping = row.mapping || {};
                     const mappingText = [
-                        mapping.deviceName ? `Device: ${mapping.deviceName}` : '',
-                        mapping.multiSync ? `Sync: ${mapping.multiSyncGroup || '-'} / ${mapping.syncCluster || '-'}` : 'Sync: aus'
+                        mapping.deviceName ? `Device: ${escapeHtml(mapping.deviceName)}` : '',
+                        mapping.multiSync ? `Sync: ${escapeHtml(mapping.multiSyncGroup || '-')} / ${escapeHtml(mapping.syncCluster || '-')}` : 'Sync: aus'
                     ].filter(Boolean).join('<br>');
                     const last = row.letzterWiderspruch
                         ? `${escapeHtml(row.letzterWiderspruch.erwartet || '')} → ${escapeHtml(row.letzterWiderspruch.gemeldet || '')}<br><span style="color:var(--text-muted)">nach ${Math.round((row.letzterWiderspruch.nachMs || 0) / 1000)} s</span>`
@@ -244,13 +324,15 @@
 
                     lampHtml += `<tr>
                         <td><div style="font-weight:bold">${escapeHtml(row.name || row.uuid)}</div><div style="font-size:0.75em;color:#888;font-family:monospace">${escapeHtml(row.uuid)}</div></td>
-                        <td style="text-align:right">${row.befehle || 0}</td>
-                        <td style="text-align:right">${row.bestaetigt || 0}</td>
-                        <td style="text-align:right;color:${color};font-weight:bold">${row.widersprueche || 0}</td>
+                        <td style="text-align:right">${Number(row.befehle) || 0}</td>
+                        <td style="text-align:right">${Number(row.bestaetigt) || 0}</td>
+                        <td style="text-align:right;color:${color};font-weight:bold">${Number(row.widersprueche) || 0}</td>
                         <td style="text-align:right;color:${color}">${quote} %</td>
-                        <td style="text-align:right">${row.verifiziert || 0}</td>
-                        <td style="text-align:right">${row.nachgesteuert || 0}</td>
-                        <td style="text-align:right;color:${(row.communicationErrors || 0) ? 'orange' : 'inherit'}">${row.communicationErrors || 0}</td>
+                        <td style="text-align:right">${Number(row.verifiziert) || 0}</td>
+                        <td style="text-align:right">${Number(row.nachgesteuert) || 0}</td>
+                        <td style="text-align:right;color:${(row.communicationErrors || 0) ? 'orange' : 'inherit'}">${Number(row.communicationErrors) || 0}</td>
+                        <td style="text-align:right">${Number(row.requestErrors) || 0}</td>
+                        <td style="font-size:0.8em">${startup}${row.startupStatus ? `<br>${Number(row.startupAttempts) || 0} Versuch(e)` : ''}</td>
                         <td style="font-size:0.8em">${mappingText}</td>
                         <td style="font-size:0.8em">${last}</td>
                     </tr>`;
@@ -258,10 +340,7 @@
                 lampHtml += `</tbody></table></div>`;
             }
 
-            div.innerHTML += lampHtml;
-        } catch(e) {
-            div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Lampendiagnose nicht verfügbar: ${escapeHtml(e.message)}</div>`;
-        }
+            return lampHtml;
     }
 
     async function loadDetected() {
@@ -324,7 +403,7 @@
         const consoleDiv = document.getElementById('logConsole');
         if(!consoleDiv) return;
         if (!cachedLogs || cachedLogs.length === 0) {
-            consoleDiv.innerHTML = '<div style="text-align:center; color:#555; padding-top:20px;">Keine Einträge gefunden.</div>';
+            consoleDiv.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding-top:20px;">Keine Einträge gefunden.</div>';
             return;
         }
         const html = cachedLogs.map(l => {
@@ -351,6 +430,7 @@
     function renderMappings() {
         const list = document.getElementById('mappingList');
         if(!list) return;
+        if (list.contains?.(document.activeElement)) return;
         list.innerHTML = '';
         const filtered = mappings.filter(m => {
             if (currentTab === 'light') return m.hue_type === 'light' || m.hue_type === 'group';
@@ -445,24 +525,32 @@
 
         const div = document.createElement('div');
         div.className = `mapping-item type-${escapeHtml(m.hue_type)}`;
-        div.onclick = () => showDetails(m.hue_uuid, m.loxone_name);
 
         div.innerHTML = `
-            <div style="${batTextStyle}">
-                <div class="mapping-lox">${escapeHtml(m.loxone_name)}</div>
-                <div class="mapping-hue">${escapeHtml(m.hue_name)}</div>
-            </div>
-            <div style="display:flex; align-items:center">
-                <div class="status-badges">${badges}</div>
-                <button class="del-btn" onclick="event.stopPropagation(); deleteMapping(${jsArg(m.loxone_name)})">✖</button>
-            </div>
+            <button class="mapping-open" data-mapping="${escapeHtml(m.loxone_name)}" onclick="showDetails(${jsArg(m.hue_uuid)}, ${jsArg(m.loxone_name)})">
+                <span class="mapping-name" style="${batTextStyle}">
+                    <span class="mapping-lox">${escapeHtml(m.loxone_name)}</span>
+                    <span class="mapping-hue">${escapeHtml(m.hue_name)}</span>
+                </span>
+                <span class="status-badges">${badges}</span>
+            </button>
+            <button class="del-btn" aria-label="${escapeHtml(m.loxone_name)} löschen" onclick="deleteMapping(${jsArg(m.loxone_name)})">✖</button>
         `;
         return div;
     }
 
     async function loadTargets() { try { targets = await apiRequest('/api/targets'); if(currentTab!=='system') renderDropdown(); } catch(e){ console.error("Fehler bei loadTargets:", e); } }
     async function loadMappings() { try { mappings = await apiRequest('/api/mapping'); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadMappings:", e); } }
-    async function loadStatus() { try { status = await apiRequest('/api/status'); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadStatus:", e); } }
+    async function loadStatus() {
+        if (statusBusy) return;
+        statusBusy = true;
+        try {
+            status = await apiRequest('/api/status');
+            if (currentTab !== 'system') renderMappings();
+            refreshDetailsStatus();
+        } catch (e) { console.error('Fehler bei loadStatus:', e); }
+        finally { statusBusy = false; }
+    }
     async function loadMultiSyncSettingsCache() {
         try {
             const s = await (await fetch('/api/settings')).json();
@@ -557,11 +645,11 @@
     }
 
     function jsArg(value) {
-        return JSON.stringify(String(value ?? ''))
+        return escapeHtml(JSON.stringify(String(value ?? ''))
             .replace(/</g, '\\u003c')
             .replace(/>/g, '\\u003e')
             .replace(/&/g, '\\u0026')
-            .replace(/'/g, '\\u0027');
+            .replace(/'/g, '\\u0027'));
     }
 
     function safeNumber(value, fallback = '') {
@@ -569,8 +657,9 @@
         return Number.isFinite(number) ? number : fallback;
     }
 
-    function infoLabel(label, tip) {
-        return `<span class="setting-label">${escapeHtml(label)} <span class="setting-help" tabindex="0" data-tip="${escapeHtml(tip)}">i</span></span>`;
+    function infoLabel(label, tip, controlId = '') {
+        const text = controlId ? `<label for="${escapeHtml(controlId)}">${escapeHtml(label)}</label>` : escapeHtml(label);
+        return `<span class="setting-label">${text} <span class="setting-help" tabindex="0" data-tip="${escapeHtml(tip)}">i</span></span>`;
     }
 
     function getMultiSyncFormSettings(groupId = 'a') {
@@ -669,8 +758,14 @@
     }
 
     function renderMultiSyncGroupRows(settings) {
-        const cfg = settings || {};
-        const groups = cfg.groups || MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}`, syncWindowMs: 120, batchSize: 4, batchDelayMs: 30, maxCommandsPerSecond: 10, sameClusterSpacingMs: 10 }));
+        const cfg = { ...settings, bridgeMaxCommandsPerSecond: safeNumber(settings?.bridgeMaxCommandsPerSecond, 30) };
+        const groups = MULTI_SYNC_GROUP_IDS.map(id => {
+            const group = cfg.groups?.find(item => item.id === id) || {};
+            return { ...group, id, ...Object.fromEntries([
+                ['syncWindowMs', 120], ['batchSize', 4], ['batchDelayMs', 30],
+                ['maxCommandsPerSecond', 10], ['sameClusterSpacingMs', 10]
+            ].map(([key, fallback]) => [key, safeNumber(group[key], fallback)])) };
+        });
         let html = `
             <tr>
                 <td>${infoLabel('Max. Bridge-Befehle/s', 'Harte Mindestpause für alle Hue-PUTs, auch Cluster, Effekte, Retries und Funkmaßnahmen. Bei 20/s mindestens 50 ms zwischen Starts. Bei Hue 429 senken; zunächst 10/s testen.')}</td>
@@ -690,7 +785,7 @@
             html += `
                 <tr>
                     <td colspan="2">
-                        <details style="border:1px solid var(--border); border-radius:6px; padding:10px; background:#fafafa;" ${id === 'a' ? 'open' : ''}>
+                        <details style="border:1px solid var(--border); border-radius:6px; padding:10px; background:var(--subtle-bg);" ${id === 'a' ? 'open' : ''}>
                             <summary style="cursor:pointer; font-weight:bold;">${escapeHtml(group.name || label)}</summary>
                             <table class="settings-table" style="margin-top:10px;">
                                 <tr><td>${infoLabel('Name', 'Freier Anzeigename der Multi-Sync-Gruppe. Der Name kann auch als Effektziel verwendet werden, wenn kein gleichnamiges Loxone-Mapping existiert.')}</td><td><input id="sys_multiName_${id}" value="${escapeHtml(group.name || label)}" oninput="renderMultiSyncPreview('${id}')"></td></tr>
@@ -699,7 +794,7 @@
                                 <tr><td>${infoLabel('Batch-Pause', 'Zusätzliche Pause nach jedem Batch. Hilft nur, wenn die Batchgröße kleiner ist als die Lampenanzahl. Bei Batchgröße 10 und 10 Lampen meist 0 ms sinnvoll.')}</td><td><div class="slider-container"><input type="range" id="sys_multiBatchDelayMs_${id}" min="0" max="300" step="10" value="${group.batchDelayMs ?? 30}" oninput="document.getElementById('val_multiBatchDelay_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiBatchDelay_${id}" class="slider-val">${group.batchDelayMs ?? 30} ms</span></div></td></tr>
                                 <tr><td>${infoLabel('Max. Lichtbefehle/s', 'Bestimmt den Abstand zwischen verschiedenen Clustern dieser Gruppe. Im Cluster gilt dessen Abstand. Die globale Grenze begrenzt beide; zunächst 10/s testen.')}</td><td><div class="slider-container"><input type="range" id="sys_multiMaxCommandsPerSecond_${id}" min="1" max="50" step="1" value="${group.maxCommandsPerSecond ?? 10}" oninput="document.getElementById('val_multiMaxRate_${id}').innerText = this.value + ' /s'; renderMultiSyncPreview('${id}');"><span id="val_multiMaxRate_${id}" class="slider-val">${group.maxCommandsPerSecond ?? 10} /s</span></div></td></tr>
                                 <tr><td>${infoLabel('Abstand im Ablauf-Cluster', 'Sollabstand innerhalb eines Clusters. Die globale Bridge-Grenze hat Vorrang: Bei 20/s sind auch mit Sollwert 5 ms mindestens 50 ms nötig.')}</td><td><div class="slider-container"><input type="range" id="sys_multiSameClusterSpacingMs_${id}" min="0" max="50" step="1" value="${group.sameClusterSpacingMs ?? 10}" oninput="document.getElementById('val_multiSameClusterSpacing_${id}').innerText = this.value + ' ms'; renderMultiSyncPreview('${id}');"><span id="val_multiSameClusterSpacing_${id}" class="slider-val">${group.sameClusterSpacingMs ?? 10} ms</span></div></td></tr>
-                                <tr><td>${infoLabel('Timing-Test', 'Rechnerischer Plan einschließlich globaler Grenze. Keine Live-Messung: spätere Eingänge, Warteschlangen, Bridge-Antwortzeiten und Retries können den Ablauf verlängern.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
+                                <tr><td>${infoLabel('Timing-Test', 'Rechnerischer Plan einschließlich globaler Grenze. Keine Live-Messung: spätere Eingänge, Warteschlangen, Bridge-Antwortzeiten und Retries können den Ablauf verlängern.')}</td><td><div id="multiSyncPreview_${id}" style="font-size:0.8rem; color:var(--text-main); background:var(--subtle-bg); border:1px solid var(--border); border-radius:6px; padding:10px;"></div></td></tr>
                             </table>
                         </details>
                     </td>
@@ -713,7 +808,7 @@
     function renderSecurityRows(security) {
         const s = security || securitySettings;
         return `
-            <tr><td colspan="2" style="background:#eee;font-weight:bold">Sicherheit / Zugriffsschutz</td></tr>
+            <tr><td colspan="2" style="background:var(--section-bg);font-weight:bold">Sicherheit / Zugriffsschutz</td></tr>
             <tr>
                 <td>${infoLabel('Dashboard/API schützen', 'Schützt Webinterface und API mit Basic Auth. Loxone-Steuer-URLs bleiben bewusst frei, damit bestehende virtuelle Ausgänge weiter funktionieren.')}</td>
                 <td>
@@ -729,7 +824,7 @@
             <tr>
                 <td></td>
                 <td>
-                    <button class="add-btn" style="width:auto; margin:0;" onclick="saveSecuritySettings()">Zugriffsschutz speichern</button>
+                    <button id="saveSecurityButton" class="add-btn" style="width:auto; margin:0;" onclick="saveSecuritySettings()">Zugriffsschutz speichern</button>
                     <div id="securityStatusHint" style="font-size:0.75em; color:var(--text-muted); margin-top:6px;">
                         ${s.passwordConfigured ? 'Passwort ist gesetzt.' : 'Noch kein Passwort gesetzt.'}
                     </div>
@@ -739,6 +834,7 @@
     }
 
     async function saveSecuritySettings() {
+        if (securityBusy) return;
         const authEnabled = document.getElementById('sys_authEnabled').checked;
         const authUser = document.getElementById('sys_authUser').value.trim() || 'admin';
         const password = document.getElementById('sys_authPassword').value;
@@ -753,6 +849,9 @@
             return;
         }
 
+        securityBusy = true;
+        document.getElementById('saveSecurityButton').disabled = true;
+        document.getElementById('securityTable').inert = true;
         try {
         const result = await apiRequest('/api/security/settings', {
             method: 'POST',
@@ -765,12 +864,27 @@
             authUser: result.authUser,
             passwordConfigured: result.passwordConfigured
         };
-        alert('Zugriffsschutz gespeichert. Beim nächsten Aufruf ist eine Anmeldung erforderlich.');
-        loadSettings();
+        securityDirty = false;
+        renderSecuritySettings();
+        alert(result.authEnabled
+            ? 'Zugriffsschutz gespeichert. Beim nächsten Aufruf ist eine Anmeldung erforderlich.'
+            : 'Zugriffsschutz deaktiviert.');
         } catch (error) { alert('Zugriffsschutz nicht gespeichert: ' + error.message); }
+        finally {
+            securityBusy = false;
+            document.getElementById('securityTable').inert = false;
+            document.getElementById('saveSecurityButton').disabled = false;
+        }
     }
 
     async function saveSettings() {
+        if (settingsBusy) return;
+        for (const input of document.querySelectorAll('#settingsTable input[type="number"]')) {
+            if (!input.reportValidity()) return;
+        }
+        settingsBusy = true;
+        document.getElementById('saveSettingsButton').disabled = true;
+        document.getElementById('settingsTable').inert = true;
         const d = {};
         ['sys_loxIp', 'sys_loxPort', 'sys_mqttBroker', 'sys_mqttPort', 'sys_mqttUser', 'sys_mqttPass', 'sys_mqttPrefix'].forEach(id => d[id.replace('sys_','')] = document.getElementById(id).value);
         
@@ -796,25 +910,92 @@
                     groups: d.multiGroups
                 }
             })});
-            alert("Gespeichert!");
-            loadSettings();
+            settingsDirty = false;
+            await loadSettings('general');
+            alert('Allgemeine Einstellungen gespeichert.' + (securityDirty ? ' Zugriffsschutz ist noch nicht gespeichert.' : ''));
         } catch(e) { alert('Speichern fehlgeschlagen: ' + e.message); }
+        finally {
+            settingsBusy = false;
+            document.getElementById('settingsTable').inert = false;
+            document.getElementById('saveSettingsButton').disabled = false;
+        }
     }
 
-    async function loadSettings() {
+    function renderSecuritySettings() {
+        const table = document.getElementById('securityTable');
+        table.innerHTML = renderSecurityRows(securitySettings);
+        table.oninput = table.onchange = () => { securityDirty = true; };
+    }
+
+    function upgradeNumericControls(settings) {
+        const fields = [
+            ['sys_transition', 'transitionTime', settings.transitionTime],
+            ['sys_throttle', 'throttleTime', settings.throttleTime],
+            ['sys_eventStreamWatchdogTimeoutSeconds', 'eventStreamWatchdogTimeoutSeconds', settings.eventStreamWatchdogTimeoutSeconds],
+            ['sys_multiBridgeMaxCommandsPerSecond', 'bridgeMaxCommandsPerSecond', settings.multiLightControl?.bridgeMaxCommandsPerSecond]
+        ];
+        const groupFields = {
+            multiSyncWindowMs: 'syncWindowMs', multiBatchSize: 'batchSize', multiBatchDelayMs: 'batchDelayMs',
+            multiMaxCommandsPerSecond: 'maxCommandsPerSecond', multiSameClusterSpacingMs: 'sameClusterSpacingMs'
+        };
+        MULTI_SYNC_GROUP_IDS.forEach(id => {
+            const group = settings.multiLightControl?.groups?.find(item => item.id === id) || {};
+            Object.entries(groupFields).forEach(([field, key]) => fields.push([`sys_${field}_${id}`, key, group[key]]));
+        });
+        fields.forEach(([id, key, value]) => {
+            const input = document.getElementById(id);
+            if (!input?.parentElement) return;
+            const limits = SettingsLimits[key];
+            const wasRange = input.type === 'range';
+            const updateLabel = input.oninput;
+            input.type = 'number';
+            input.min = limits.min;
+            input.max = limits.max;
+            input.step = '1';
+            input.required = true;
+            input.value = safeNumber(value, limits.default);
+            const label = input.closest('tr').querySelector('td').textContent.trim();
+            input.setAttribute('aria-label', label + (key === 'eventStreamWatchdogTimeoutSeconds' ? ' in Sekunden' : ''));
+            if (!wasRange) return;
+            input.classList.add('numeric-entry');
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.id = id + '_slider';
+            slider.min = input.min;
+            slider.max = input.max;
+            slider.step = input.step;
+            slider.value = input.value;
+            slider.setAttribute('aria-label', label);
+            input.before(slider);
+            input.oninput = () => {
+                if (!input.checkValidity()) return;
+                slider.value = input.value;
+                if (updateLabel) updateLabel.call(input);
+            };
+            slider.oninput = () => {
+                input.value = slider.value;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            };
+            if (updateLabel) updateLabel.call(input);
+        });
+    }
+
+    async function loadSettings(section = 'all') {
+        const loadId = ++settingsLoadId;
         try {
             const [s, security] = await Promise.all([
                 apiRequest('/api/settings'),
                 apiRequest('/api/security/status')
             ]);
+            if (loadId !== settingsLoadId) return;
             securitySettings = security;
             multiLightControlSettings = s.multiLightControl || multiLightControlSettings;
             const table = document.getElementById('settingsTable');
-            const v = (val) => val !== undefined ? val : '';
+            const v = (val) => escapeHtml(val);
             
             table.innerHTML = `
-                <tr><td colspan="2" style="background:#eee;font-weight:bold">Allgemein</td></tr>
-                <tr><td>Version</td><td><span class="badge" style="background:#333;color:#fff">${s.version}</span></td></tr>
+                <tr><td colspan="2" style="background:var(--section-bg);font-weight:bold">Allgemein</td></tr>
+                <tr><td>Version</td><td><span class="badge" style="background:#333;color:#fff">${v(s.version)}</span></td></tr>
                 <tr><td>${infoLabel('Loxone IP', 'IP-Adresse des Loxone Miniservers für UDP-Rückmeldungen von Hue Statusänderungen.')}</td><td><input id="sys_loxIp" value="${v(s.loxone_ip)}"></td></tr>
                 <tr><td>${infoLabel('UDP Port', 'UDP-Port am Loxone Miniserver, auf den Statusmeldungen gesendet werden. Muss zur virtuellen UDP-Eingangskonfiguration passen.')}</td><td><input type="number" id="sys_loxPort" value="${v(s.loxone_port)}"></td></tr>
                 
@@ -840,56 +1021,15 @@
                     <td>${infoLabel('EventStream Watchdog', 'Startet den Hue EventStream neu, wenn längere Zeit keine Daten kommen. 10 min ist Standard; niedriger nur bei echten Aussetzern.')}</td>
                     <td>
                         <div class="slider-container">
-                            <input type="range" id="sys_eventStreamWatchdogTimeoutSeconds" min="60" max="3600" step="60" value="${v(s.eventStreamWatchdogTimeoutSeconds ?? 600)}" oninput="document.getElementById('val_eventWatchdog').innerText = Math.round(this.value / 60) + ' min'">
-                            <span id="val_eventWatchdog" class="slider-val">${Math.round((s.eventStreamWatchdogTimeoutSeconds ?? 600) / 60)} min</span>
+                            <input type="range" id="sys_eventStreamWatchdogTimeoutSeconds" min="60" max="3600" step="1" value="${v(s.eventStreamWatchdogTimeoutSeconds ?? 600)}" oninput="document.getElementById('val_eventWatchdog').innerText = this.value + ' s'">
+                            <span id="val_eventWatchdog" class="slider-val">${v(s.eventStreamWatchdogTimeoutSeconds ?? 600)} s</span>
                         </div>
                         <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Neustart des Hue EventStreams nach Ruhezeit ohne Daten. Standard: 10 min; niedriger nur bei echten Aussetzern.</div>
                     </td>
                 </tr>
 
-                <tr><td colspan="2" style="background:#eee;font-weight:bold">Mehrlampensynchronisierung</td></tr>
+                <tr><td colspan="2" style="background:var(--section-bg);font-weight:bold">Mehrlampensynchronisierung</td></tr>
                 ${renderMultiSyncGroupRows(s.multiLightControl)}
-                <!-- legacy single-group controls disabled by grouped scheduler
-                <tr>
-                    <td>Sammelfenster</td>
-                    <td>
-                        <div class="slider-container">
-                            <input type="range" id="sys_multiSyncWindowMs" min="50" max="500" step="10" value="${v(s.multiLightControl?.syncWindowMs ?? 120)}" oninput="document.getElementById('val_multiSyncWindow').innerText = this.value + ' ms'; renderMultiSyncPreview();">
-                            <span id="val_multiSyncWindow" class="slider-val">${v(s.multiLightControl?.syncWindowMs ?? 120)} ms</span>
-                        </div>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Batchgröße</td>
-                    <td><input type="number" id="sys_multiBatchSize" min="1" max="20" step="1" value="${v(s.multiLightControl?.batchSize ?? 4)}" oninput="renderMultiSyncPreview()"></td>
-                </tr>
-                <tr>
-                    <td>Batch-Pause</td>
-                    <td>
-                        <div class="slider-container">
-                            <input type="range" id="sys_multiBatchDelayMs" min="0" max="300" step="10" value="${v(s.multiLightControl?.batchDelayMs ?? 30)}" oninput="document.getElementById('val_multiBatchDelay').innerText = this.value + ' ms'; renderMultiSyncPreview();">
-                            <span id="val_multiBatchDelay" class="slider-val">${v(s.multiLightControl?.batchDelayMs ?? 30)} ms</span>
-                        </div>
-                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Gilt nur für Lampen mit aktivierter Mehrlampensynchronisierung.</div>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Max. Lichtbefehle/s</td>
-                    <td>
-                        <div class="slider-container">
-                            <input type="range" id="sys_multiMaxCommandsPerSecond" min="1" max="50" step="1" value="${v(s.multiLightControl?.maxCommandsPerSecond ?? 10)}" oninput="document.getElementById('val_multiMaxRate').innerText = this.value + ' /s'; renderMultiSyncPreview();">
-                            <span id="val_multiMaxRate" class="slider-val">${v(s.multiLightControl?.maxCommandsPerSecond ?? 10)} /s</span>
-                        </div>
-                        <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">10/s entspricht der Hue-Empfehlung. Höhere Werte vorsichtig je Lampenmenge testen.</div>
-                    </td>
-                </tr>
-                <tr>
-                    <td>Timing-Test</td>
-                    <td>
-                        <div id="multiSyncPreview" style="font-size:0.8rem; color:var(--text-main); background:#f8f9fa; border:1px solid var(--border); border-radius:6px; padding:10px;"></div>
-                    </td>
-                </tr>
-                -->
 
                 <tr><td>${infoLabel('Debug Modus', 'Schreibt detaillierte IN/OUT/Event-Logs. Hilfreich zum Testen, im Dauerbetrieb bei vielen Befehlen eher deaktivieren.')}</td><td><input type="checkbox" id="sys_debug" ${s.debug?'checked':''}></td></tr>
                 <tr>
@@ -897,12 +1037,11 @@
                     <td>
                         <input type="checkbox" id="sys_disableLogDisk" ${s.disableLogDisk?'checked':''}>
                         <div style="font-size:0.7em; color:var(--text-muted); margin-top:2px">Deaktiviert Schreibzugriffe auf logs.db.</div>
+                        ${s.logDiskDegraded ? '<div role="alert" class="status-err">Log-Datenbank nicht verfügbar. Neue Logs bleiben vorübergehend im RAM und gehen beim Neustart verloren.</div>' : ''}
                     </td>
                 </tr>
 
-                ${renderSecurityRows(securitySettings)}
-
-                <tr><td colspan="2" style="background:#eee;font-weight:bold">MQTT</td></tr>
+                <tr><td colspan="2" style="background:var(--section-bg);font-weight:bold">MQTT</td></tr>
                 <tr><td>${infoLabel('Aktivieren', 'Aktiviert parallele Statusausgabe an einen MQTT Broker.')}</td><td><input type="checkbox" id="sys_mqttEnabled" ${s.mqttEnabled?'checked':''}></td></tr>
                 <tr><td>${infoLabel('Broker IP', 'Adresse des MQTT Brokers, z. B. Mosquitto oder Home Assistant MQTT.')}</td><td><input id="sys_mqttBroker" value="${v(s.mqttBroker)}"></td></tr>
                 <tr><td>${infoLabel('Port', 'MQTT-Port. Standard ist 1883 ohne TLS.')}</td><td><input type="number" id="sys_mqttPort" value="${v(s.mqttPort)||1883}"></td></tr>
@@ -911,8 +1050,14 @@
                 <tr style="${s.mqttPassSet ? '' : 'display:none'}"><td>${infoLabel('Passwort löschen', 'Entfernt das gespeicherte MQTT Passwort beim Speichern.')}</td><td><label style="display:flex; align-items:center; gap:8px;"><input type="checkbox" id="sys_mqttPassClear"> MQTT Passwort löschen</label></td></tr>
                 <tr><td>${infoLabel('Prefix', 'Topic-Prefix für MQTT Statusmeldungen, z. B. loxhue/light/wohnzimmer/on.')}</td><td><input id="sys_mqttPrefix" value="${v(s.mqttPrefix)||'loxhue'}"></td></tr>
             `;
+            upgradeNumericControls(s);
+            table.oninput = table.onchange = () => { settingsDirty = true; };
+            if (section === 'all') renderSecuritySettings();
             renderMultiSyncPreview();
-        } catch(e){ console.error("Fehler bei loadSettings:", e); }
+        } catch(e){
+            console.error('Fehler bei loadSettings:', e);
+            alert('Einstellungen konnten nicht geladen werden: ' + e.message);
+        }
     }
 
     function createDetailsDraft(entry) {
@@ -928,7 +1073,10 @@
                 sync_offset_ms: offset,
                 verify_state: entry.verify_state === true,
                 split_on: entry.split_on === true,
-                repeat_command: entry.repeat_command === true
+                repeat_command: entry.repeat_command === true,
+                power_switched: entry.power_switched === true,
+                power_on_delay_ms: entry.power_on_delay_ms ?? 0,
+                power_retry_window_ms: entry.power_retry_window_ms ?? 15000
             },
             values: {
                 sync_lox: entry.sync_lox === true,
@@ -939,7 +1087,10 @@
                 sync_offset_ms: offset,
                 verify_state: entry.verify_state === true,
                 split_on: entry.split_on === true,
-                repeat_command: entry.repeat_command === true
+                repeat_command: entry.repeat_command === true,
+                power_switched: entry.power_switched === true,
+                power_on_delay_ms: entry.power_on_delay_ms ?? 0,
+                power_retry_window_ms: entry.power_retry_window_ms ?? 15000
             }
         };
     }
@@ -974,7 +1125,19 @@
     }
 
     function updateDetailsDraft(key, value) {
-        if (!detailsDraft) return;
+        if (!detailsDraft || detailsBusy) return;
+        if (key === 'power_on_delay_ms' || key === 'power_retry_window_ms') {
+            detailsDraft.values[key] = value === '' ? NaN : Number(value);
+            return;
+        }
+        if (key === 'power_switched') {
+            detailsDraft.values.power_switched = value === true;
+            const options = document.getElementById('details_powerOptions');
+            if (options) options.hidden = !value;
+            const reliability = document.getElementById('details_reliability');
+            if (reliability) reliability.disabled = value === true;
+            return;
+        }
         if (key === 'sync_offset_ms') {
             const offset = normalizeSyncOffset(value, null);
             const statusEl = document.getElementById('detailsSaveStatus');
@@ -1031,8 +1194,19 @@
         setTimeout(() => toast.remove(), 2600);
     }
 
+    function setDetailsBusy(busy) {
+        detailsBusy = busy;
+        const modal = document.getElementById('detailsModal');
+        modal?.setAttribute?.('aria-busy', String(busy));
+        modal?.querySelectorAll?.('.modal-header button, .modal-actions button').forEach(button => { button.disabled = busy; });
+        const content = document.getElementById('detailsContent');
+        if (content) content.inert = busy;
+    }
+
     async function saveDetailsSettings() {
+        if (detailsBusy) return;
         if (!detailsDraft) return closeModal('detailsModal');
+        const draft = detailsDraft;
         const statusEl = document.getElementById('detailsSaveStatus');
         const offset = normalizeSyncOffset(detailsDraft.values.sync_offset_ms, null);
         if (offset === null) {
@@ -1041,47 +1215,89 @@
         }
 
         const body = { ...detailsDraft.values, sync_offset_ms: offset };
+        if (!Number.isInteger(body.power_on_delay_ms) || body.power_on_delay_ms < 0 || body.power_on_delay_ms > 10000
+            || !Number.isInteger(body.power_retry_window_ms) || body.power_retry_window_ms < 2000 || body.power_retry_window_ms > 60000
+            || body.power_retry_window_ms <= body.power_on_delay_ms) {
+            if (statusEl) statusEl.textContent = 'Anlaufwartezeit: 0–10000 ms. Wiederanlaufzeit: 2000–60000 ms, länger als die Anlaufwartezeit.';
+            return;
+        }
         if (statusEl) statusEl.textContent = 'Speichere...';
+        setDetailsBusy(true);
 
         try {
-            const payload = await apiRequest(`/api/mapping/${encodeURIComponent(detailsDraft.loxoneName)}/settings`, {
+            const payload = await apiRequest(`/api/mapping/${encodeURIComponent(draft.loxoneName)}/settings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
 
-            const index = mappings.findIndex(m => m.loxone_name === detailsDraft.loxoneName);
+            if (payload.mapping?.loxone_name !== draft.loxoneName) throw new Error('Unerwartete Geräteantwort. Bitte neu laden.');
+            const index = mappings.findIndex(m => m.loxone_name === draft.loxoneName);
             if (index >= 0) mappings[index] = payload.mapping;
             renderMappings();
             if (currentTab === 'system') renderMultiSyncPreview();
-            detailsDraft = null;
-            closeModal('detailsModal');
+            if (detailsDraft === draft) {
+                detailsDraft = null;
+                closeModal('detailsModal');
+            }
             showToast('Einstellungen gespeichert');
         } catch (error) {
-            if (statusEl) statusEl.textContent = error.message;
+            if (detailsDraft === draft && statusEl) statusEl.textContent = error.message;
+        } finally {
+            setDetailsBusy(false);
         }
     }
 
     function closeDetailsModal() {
+        if (detailsBusy) return;
         if (detailsDraftChanged() && !confirm('Änderungen verwerfen?')) return;
         detailsDraft = null;
         closeModal('detailsModal');
     }
 
+    function detailsStatusHtml(loxoneName) {
+        const currentStatus = status[loxoneName] || {};
+        const safeHex = safeHexColor(currentStatus.hex);
+        const isOn = currentStatus.on === 1 || currentStatus.on === true;
+        let content = '<h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">⚡ Aktueller Status</h3><table class="details-table">';
+        if (currentStatus.on !== undefined) content += `<tr><td>Zustand</td><td>${isOn ? '<span class="status-ok">AN</span>' : '<span style="color:#888">AUS</span>'}</td></tr>`;
+        if (isOn) {
+            if (currentStatus.bri !== undefined) content += `<tr><td>Helligkeit</td><td>${Math.round(currentStatus.bri)} %</td></tr>`;
+            if (currentStatus.mirek) content += `<tr><td>Temperatur</td><td>${Math.round(1000000 / currentStatus.mirek)} K</td></tr>`;
+            if (currentStatus.hex) content += `<tr><td>Farbe</td><td><span class="color-dot" style="background-color:${safeHex}"></span> <span style="font-family:monospace">${escapeHtml(safeHex)}</span></td></tr>`;
+        }
+        if (currentStatus.bat !== undefined) content += `<tr><td>Batterie</td><td>${escapeHtml(currentStatus.bat)} %</td></tr>`;
+        if (currentStatus.temp !== undefined) content += `<tr><td>Temperatur</td><td>${escapeHtml(currentStatus.temp)} °C</td></tr>`;
+        if (currentStatus.lux !== undefined) content += `<tr><td>Helligkeit</td><td>${escapeHtml(currentStatus.lux)} lx</td></tr>`;
+        if (currentStatus.contact !== undefined) content += `<tr><td>Kontakt</td><td>${currentStatus.contact === 1 ? '🔓 Offen' : '🔒 Geschlossen'}</td></tr>`;
+        if (currentStatus.motion !== undefined) content += `<tr><td>Bewegung</td><td>${currentStatus.motion === 1 ? '🏃 Ja' : '🧘 Nein'}</td></tr>`;
+        return content + '</table>';
+    }
+
+    function refreshDetailsStatus() {
+        if (!detailsDraft) return;
+        const live = document.getElementById('detailsLiveStatus');
+        if (!live) return;
+        const html = detailsStatusHtml(detailsDraft.loxoneName);
+        if (live._statusHtml !== html) {
+            live.innerHTML = html;
+            live._statusHtml = html;
+        }
+    }
+
     function showDetails(uuid, loxoneName) {
+        if (detailsBusy) return;
         const target = targets.find(t => t.uuid === uuid);
         const entry = mappings.find(m => m.loxone_name === loxoneName);
-        const currentStatus = status[loxoneName] || {};
         if(!target || !entry) return;
         detailsDraft = createDetailsDraft(entry);
-        const safeHex = safeHexColor(currentStatus.hex);
 
         let content = `<div style="margin-bottom:20px;">`;
 
         // 1. SETTINGS (nur für Lichter/Gruppen)
         if (entry.hue_type === 'light' || entry.hue_type === 'group') {
             const caps = target.capabilities || {};
-            const supportsDimming = entry.hue_type === 'group' ? true : !!caps.supportsDimming; 
+            const supportsDimming = entry.hue_type === 'group' ? true : caps.supportsDimming !== false;
             
             const isStrictOnOff = entry.hue_type === 'light' && !supportsDimming;
             if (isStrictOnOff) {
@@ -1126,7 +1342,7 @@
 
                 <div class="settings-card" style="display:${entry.hue_type === 'light' ? 'block' : 'none'};">
                     <div style="font-weight:500; margin-bottom:6px;">Bei unzuverlässiger Übertragung</div>
-                    <select onchange="updateDetailsDraft('reliability_mode', this.value)" style="width:100%; padding:8px;">
+                    <select id="details_reliability" ${detailsDraft.values.power_switched ? 'disabled' : ''} onchange="updateDetailsDraft('reliability_mode', this.value)" style="width:100%; padding:8px;">
                         <option value="none" ${getReliabilityMode(detailsDraft.values) === 'none' ? 'selected' : ''}>Keine - Befehl einmal senden</option>
                         <option value="verify_state" ${getReliabilityMode(detailsDraft.values) === 'verify_state' ? 'selected' : ''}>Zustand nachlesen und korrigieren (empfohlen)</option>
                         <option value="split_on" ${getReliabilityMode(detailsDraft.values) === 'split_on' ? 'selected' : ''}>Einschalten aufteilen</option>
@@ -1136,7 +1352,24 @@
                         Für einzelne Lampen mit Funkproblemen. Nachlesen prüft später on/Helligkeit und sendet nur bei Abweichung erneut. Aufteilen sendet erst on=true und kurz danach Helligkeit/Farbe. Wiederholen sendet denselben Befehl einmal erneut.
                     </div>
                 </div>
-                
+                ${entry.hue_type === 'light' ? `
+                <div class="power-start-settings">
+                    <div class="power-start-toggle">
+                        <input id="details_powerSwitched" type="checkbox" ${detailsDraft.values.power_switched ? 'checked' : ''} onchange="updateDetailsDraft('power_switched', this.checked)">
+                        ${infoLabel('Netzspannung erst mit Lichtbefehl', 'Für Lampen, die am Wandschalter stromlos werden. Standard: sofort senden, bei Startproblemen begrenzt wiederholen. Nur der neueste Befehl zählt. Andere Lampen warten nicht auf den Start. Ersetzt für diese Lampe die Funkmaßnahme oben; Wiederholungen nutzen weiterhin die gemeinsame Bridge-Rate.', 'details_powerSwitched')}
+                    </div>
+                    <div id="details_powerOptions" ${detailsDraft.values.power_switched ? '' : 'hidden'}>
+                        <label class="power-start-field" for="details_powerDelay">
+                            ${infoLabel('Anlaufwartezeit (ms)', 'Standard 0: erster Versuch ohne zusätzliche Wartezeit. Nur erhöhen, wenn die Lampe nach Stromzufuhr grundsätzlich noch nicht empfangsbereit ist. Gilt beim Kaltstart, nicht bei normalen Szenenwechseln einer bereits bestätigten Lampe. Ein gemeldeter Wiederanschluss kann die Wartezeit verkürzen.')}
+                            <input id="details_powerDelay" type="number" min="0" max="10000" step="1" value="${Number(detailsDraft.values.power_on_delay_ms)}" oninput="updateDetailsDraft('power_on_delay_ms', this.value)">
+                        </label>
+                        <label class="power-start-field" for="details_powerWindow">
+                            ${infoLabel('Wiederanlaufzeit (ms)', 'Standard 15000: maximal 15 Sekunden ab Übergabe an den Netzstart, höchstens 8 Einschaltversuche. Muss länger als die Anlaufwartezeit sein. Aus beendet den Start und wird ohne Anlaufwartezeit gesendet; bei vorübergehenden Fehlern höchstens 3 Versuche innerhalb von maximal 3 Sekunden. Keine unbegrenzten Wiederholungen. Ein Neustart der Lampe selbst lässt sich nicht beschleunigen.')}
+                            <input id="details_powerWindow" type="number" min="2000" max="60000" step="1" value="${Number(detailsDraft.values.power_retry_window_ms)}" oninput="updateDetailsDraft('power_retry_window_ms', this.value)">
+                        </label>
+                    </div>
+                </div>` : ''}
+
                 <div class="settings-card" style="display:${entry.hue_type === 'light' ? 'block' : 'none'};">
                     <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
                         <input type="checkbox" ${detailsDraft.values.multi_sync === true ? 'checked' : ''} onchange="updateDetailsDraft('multi_sync', this.checked)"> 
@@ -1180,37 +1413,18 @@
         }
 
         // 2. STATUS & SPECS (für alle Geräte)
-        content += `<h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">⚡ Aktueller Status</h3><table class="details-table">`;
-        const isOn = currentStatus.on === 1 || currentStatus.on === true;
-        
-        if (currentStatus.on !== undefined) {
-            content += `<tr><td>Zustand</td><td>${isOn ? '<span class="status-ok">AN</span>' : '<span style="color:#888">AUS</span>'}</td></tr>`;
-        }
-        
-        if (isOn) {
-            if (currentStatus.bri !== undefined) content += `<tr><td>Helligkeit</td><td>${Math.round(currentStatus.bri)} %</td></tr>`;
-            if (currentStatus.mirek) content += `<tr><td>Temperatur</td><td>${Math.round(1000000 / currentStatus.mirek)} K</td></tr>`;
-            if (currentStatus.hex) content += `<tr><td>Farbe</td><td><span class="color-dot" style="background-color:${safeHex}"></span> <span style="font-family:monospace">${escapeHtml(safeHex)}</span></td></tr>`;
-        }
-
-        // Sensor Stats
-        if (currentStatus.bat !== undefined) content += `<tr><td>Batterie</td><td>${currentStatus.bat} %</td></tr>`;
-        if (currentStatus.temp !== undefined) content += `<tr><td>Temperatur</td><td>${currentStatus.temp} °C</td></tr>`;
-        if (currentStatus.lux !== undefined) content += `<tr><td>Helligkeit</td><td>${currentStatus.lux} lx</td></tr>`;
-        if (currentStatus.contact !== undefined) content += `<tr><td>Kontakt</td><td>${currentStatus.contact === 1 ? '🔓 Offen' : '🔒 Geschlossen'}</td></tr>`;
-        if (currentStatus.motion !== undefined) content += `<tr><td>Bewegung</td><td>${currentStatus.motion === 1 ? '🏃 Ja' : '🧘 Nein'}</td></tr>`;
-
+        content += `<div id="detailsLiveStatus">${detailsStatusHtml(loxoneName)}</div><table class="details-table">`;
         content += `<tr><td colspan="2" style="border-bottom:none; padding-top:20px; color:var(--text-muted); font-weight:bold;">📋 Technische Daten</td></tr>`;
         content += `<tr><td>Name</td><td>${escapeHtml(target.name)}</td></tr>`;
         content += `<tr><td>Loxone ID</td><td>${escapeHtml(loxoneName)}</td></tr>`;
-        content += `<tr><td>Typ</td><td><span class="badge" style="background:#eee;color:#333">${escapeHtml(entry.hue_type)}</span></td></tr>`;
+        content += `<tr><td>Typ</td><td><span class="badge" style="background:var(--section-bg);color:var(--text-main)">${escapeHtml(entry.hue_type)}</span></td></tr>`;
         content += `<tr><td>UUID</td><td style="font-size:0.8em; font-family:monospace">${escapeHtml(target.uuid)}</td></tr>`;
         content += `</table></div>`;
 
         const statusEl = document.getElementById('detailsSaveStatus');
         if (statusEl) statusEl.textContent = '';
         document.getElementById('detailsContent').innerHTML = content;
-        document.getElementById('detailsModal').style.display = 'flex';
+        openModal('detailsModal');
     }
 
     function toggleSelectAll() { allSelected = !allSelected; document.querySelectorAll('.modal-checkbox').forEach(cb => cb.checked = allSelected); }
@@ -1248,8 +1462,24 @@
         reader.readAsText(file);
     }
     function updateTransLabel(val, id, unit) { document.getElementById(id).innerText = val + ' ' + unit; }
-    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-    function openExportModal() { document.getElementById('exportModal').style.display = 'flex'; loadExportList(); allSelected = false; }
+    function openModal(id) {
+        modalReturnFocus = document.activeElement;
+        modalBodyOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const modal = document.getElementById(id);
+        modal.style.display = 'flex';
+        document.querySelector('.container').inert = true;
+        (modal.querySelector('button, input, select') || modal).focus();
+    }
+    function closeModal(id) {
+        document.getElementById(id).style.display = 'none';
+        document.body.style.overflow = modalBodyOverflow;
+        document.querySelector('.container').inert = false;
+        const replacement = Array.from(document.querySelectorAll('.mapping-open')).find(el => el.dataset.mapping === modalReturnFocus?.dataset?.mapping);
+        (modalReturnFocus?.isConnected ? modalReturnFocus : replacement)?.focus();
+        modalReturnFocus = null;
+    }
+    function openExportModal() { loadExportList(); allSelected = false; openModal('exportModal'); }
     function loadExportList() {
         const list = document.getElementById('exportList');
         list.innerHTML = '';
@@ -1268,4 +1498,26 @@
         });
     }
 
+    if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('beforeunload', event => {
+            if (settingsDirty || securityDirty || detailsDraftChanged() || detailsBusy || settingsBusy || securityBusy) {
+                event.preventDefault();
+                event.returnValue = '';
+            }
+        });
+        document.addEventListener('keydown', event => {
+            const modal = Array.from(document.querySelectorAll('.modal-overlay')).find(el => el.style.display === 'flex');
+            if (!modal) return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                modal.id === 'detailsModal' ? closeDetailsModal() : closeModal(modal.id);
+            } else if (event.key === 'Tab') {
+                const focusable = Array.from(modal.querySelectorAll('button, input, select, [tabindex="0"]')).filter(el => !el.disabled && el.getClientRects().length);
+                const first = focusable[0];
+                const last = focusable.at(-1);
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+                if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+            }
+        });
+    }
     init();

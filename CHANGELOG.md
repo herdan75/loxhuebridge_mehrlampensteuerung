@@ -1,8 +1,84 @@
+## [2.5.15] - 2026-11-25
+### Sicherheit und Branch-Abgleich
+- Den vorhandenen Stand `2.5.15-dev` auf `main` übernommen. Anwendungscode, Abhängigkeiten und Tests sind auf beiden Branches identisch; nur die Versionskennung unterscheidet `2.5.15` von `2.5.15-dev`.
+- Sechs npm-Audit-Meldungen des bisherigen `main` durch die bereits auf `develop` verwendeten kompatiblen Sicherheitsstände behoben: Express 4.22.3, body-parser 1.20.9, follow-redirects 1.16.3, ip-address 10.7.4, proxy-addr 2.0.8 und qs 6.17.1. Keine neuen Framework-Hauptversionen.
+- Bestehende Mehrlampensteuerung, Gruppen-/Effektbefehle, Netzstart, SSE, Loxone, MQTT und Zugriffsschutz aus dem Entwicklungsstand unverändert übernommen. Die unten dokumentierten Korrekturen aus 2.5.13-dev bis 2.5.15-dev sind damit auch auf `main` verfügbar; keine neue Lampenlogik für diesen Branch-Abgleich eingeführt.
+- README beschreibt den LoxBerry-Update-Ausschluss bei Neuinstallation und bestehenden Installationen. Der Ausschluss muss auf dem Host eingerichtet werden; ein Git-Update setzt ihn nicht automatisch.
+
+### Prüfungen
+- Saubere Installation mit `npm ci`, 238 automatisierte Tests erfolgreich und keine bekannten Schwachstellen bei `npm audit --omit=dev --audit-level=moderate` zum Prüfzeitpunkt.
+- Anwendungscode gegen den bisherigen `develop`-Stand abgeglichen. Tests verwenden simulierte Hue-Antworten und lokale HTTP-Laufwege; keine physischen Lampen geschaltet und keine laufende Installation verändert.
+
+## [2.5.15-dev] - 2026-11-25
+### Sicherheit und Backups
+- Express, body-parser, follow-redirects und qs auf kompatible Sicherheitsstände aktualisiert. HTTP-komprimierte JSON-Anfragen werden vor dem Entpacken abgelehnt.
+- Gemeinsame Konfigurationsprüfung für Start, Speichern und Restore: Datentypen, Wertebereiche, Authentifizierung und Multi-Sync-Gruppen. Fehlerhafte Backups werden vor Dateiveränderungen zurückgewiesen; optionale Legacy-Felder bleiben unterstützt.
+- Reservierte Objektnamen in Mappings abgewiesen und gerätebezogene Wörterbücher gegen Prototype-Manipulation abgesichert.
+- Backup-Export mit Download-Dateiname, Zeitstempel und Cache-Sperre; reduziertes Backup bleibt ausdrücklich nicht wiederherstellbar.
+
+### Steuerung und Status
+- Mindestabstand nativer Gruppenbefehle gilt auch für 429-Retries. Einzellicht-Raten und globale Begrenzung bleiben bestehen.
+- Netzstart und normale Zustandsprüfung aktualisieren den Statuscache aus tatsächlich gelesenen Hue-Werten. Neuere SSE-Berichte, jüngere abgeschlossene Abfragen und überholende Befehle verhindern veraltete Rückmeldungen.
+- Ausschalten netzgeschalteter Lampen wird bei vorübergehenden Fehlern höchstens dreimal innerhalb von maximal drei Sekunden versucht. Neuere Befehle ersetzen wartende Wiederholungen.
+
+### Bedienung und Prüfungen
+- Geräte-Speicherung an den ursprünglichen Entwurf gebunden; keine parallelen Speicheranfragen und kein Gerätewechsel während des Speicherns. Fehler erhalten den Entwurf.
+- Live-Status im offenen Detailfenster ohne Verlust ungespeicherter Einstellungen. Zuverlässigkeitsdiagnose mit automatischem lokalem Abruf, Zeitstempel und sichtbaren Abruffehlern; keine zusätzlichen Bridge-Abfragen.
+- Regressionstests für die korrigierten Fehler, echte lokale HTTP-/Restore-/Auth-Laufwege und Desktop-/Mobil-Browserprüfung mit simulierten Daten. Keine physischen Lampen geschaltet; keine Garantie für reale Zigbee-Einschaltzeiten.
+
+## [2.5.14-dev] - 2026-10-16
+### Netzgeschaltete Lampen
+- Option pro Light-UUID für Netzspannung erst mit Lichtbefehl; Standard aus. Anlaufwartezeit standardmäßig 0 ms, begrenzter Wiederanlauf standardmäßig 15 Sekunden und höchstens 8 Einzellichtversuche.
+- Wartezeiten, Rückfragen und Wiederholungen außerhalb der normalen PUT-Warteschlange. Höchstens ein Netzstart-PUT überlappt normale Requests; globale Rate und 429-Pausen gelten weiter für alle PUT-Starts.
+- Neuester Sollwert gewinnt; Aus beendet Einschaltwiederholungen. Warme, bestätigte Lampen bekommen keine zusätzliche Anlaufwartezeit. SSE-Wiederanschluss kann die Wartezeit verkürzen.
+- Native Hue-Gruppenbefehle bleiben erhalten; nur markierte Mitglieder werden anschließend geprüft und bei Bedarf einzeln nachgesteuert. Effekt-Fallbacks berücksichtigen die Option; einmalige Alerts bleiben unverändert.
+- Geräte-Detailfenster mit validierten Zahlenfeldern und Infotexten; Netzstart ersetzt die zusätzlichen Funkmaßnahmen derselben Lampe, ohne deren gespeicherte Auswahl zu verlieren.
+
+### Korrekturen und Diagnose
+- Globale PUT-Abstände beginnen am tatsächlichen Request-Aufruf; synchrone Diagnosearbeit vor dem Senden verkürzt den Mindestabstand nicht mehr. Mit deterministischem Regressionstest abgesichert.
+- Nachlesen/Wiederholen greift auch bei transientem Fehler des ersten PUTs. Unvollständige GET-Daten gelten nicht mehr als erfolgreiche Zustandsprüfung.
+- Hue-Fachfehler beim Ressourcenabruf werden auch bei HTTP 200 erkannt; bekannte Gerätefähigkeiten bleiben bei solchen Ladefehlern erhalten.
+- Erfolgreiche Zustandsabfragen zählen als Bestätigung; Nachsteuerungen erst beim tatsächlichen Senden. Diagnose ergänzt Anfragenfehler, Netzstartstatus und Versuchszähler.
+- Explizite Null-Übergänge für dimmbare Helligkeits-/Farbwerte; reine Schaltaktoren bleiben ohne Dynamics. Wiederverwendung von HTTPS-Verbindungen reduziert vermeidbare Verbindungsaufbauten.
+- Indirekte Abhängigkeiten `proxy-addr` und `ip-address` auf gepatchte kompatible Versionen aktualisiert.
+
+### Prüfungen und Grenzen
+- Regressionstests für blockierungsfreien Netzstart, globale Rate, Offline/Timeout/429, OFF und Szenenwechsel während des Starts, maximale Versuche, warme Lampen, Gruppen, Effekte, Mapping-Validierung und UI ergänzt.
+- HTTP-Integration mit simuliertem Hue-Endpunkt prüft Speichern, Befehle, SSE-Bestätigung, Diagnose und Backup. Desktop-/Mobilprüfung mit Testdaten; keine physischen Lampen im Test geschaltet.
+- Dokumentation erläutert physische Startgrenzen und zusätzliche Bridge-Last. Keine Zusage identischer Einschaltzeiten nach Netztrennung.
+
+## [2.5.13-dev] - 2026-09-13
+### Sicherheit und Befehlsreihenfolge
+- Aktivierter Zugriffsschutz bleibt auch bei unvollständiger Konfiguration erhalten; leere Loxone-Adressen werden beim Speichern abgelehnt.
+- Einstellungen, Geräte-Metadaten und Diagnosewerte werden im Webinterface kontextgerecht maskiert.
+- Gruppenbefehle, Effekte und Alles-Sequenzen berücksichtigen die ursprüngliche Eingangsreihenfolge. Ältere Puffer, Timer und Retries überschreiben keine neueren Mitgliedsbefehle.
+- Native Gruppenbefehle werden bei zwischenzeitlich abweichenden Einzelbefehlen nur noch auf die nicht überholten Mitglieder verteilt. Unauflösbare Gruppen werden mit Fehler abgelehnt.
+- Gemeinsame Mapping-Validierung für Speichern und Restore: eindeutige URL-Namen, Ressourcentypen und widerspruchsfreie Funkmaßnahmen; Global-Mapping ausdrücklich zugelassen.
+
+### Timing und Diagnose
+- Batch-Pausen bleiben auch mit Ablauf-Clustern wirksam. Batchgröße zählt Lampen; Cluster bleiben ungeteilt.
+- Bestätigungen und Widersprüche werden einmal pro logischem Befehl gezählt. Bereits bestätigte Befehle und Übergangszwischenstände erzeugen keine weiteren Fehlzählungen; Kommunikationsfehler bleiben separat.
+- Bekannte Gerätefähigkeiten begrenzen Farb-, Farbtemperatur- und Dimmparameter. Unbekannte Fähigkeiten werden nicht als reine Schaltgeräte interpretiert.
+- Batterieereignisse aktualisieren alle zugehörigen Geräte-Mappings.
+- Laufende SQLite-Lese-/Schreibfehler schalten auf begrenzte RAM-Logs um und werden im Systembereich angezeigt.
+- Veraltete MQTT-Clients beeinflussen neue Verbindungen nicht; unveränderte Verbindungsdaten lösen keinen Neuaufbau aus. Passwörter werden unverändert übergeben.
+
+### Bedienung
+- Setup meldet Speicherfehler und ermöglicht einen erneuten Versuch statt falscher Erfolgsmeldung.
+- Regler und Zahlenfelder verwenden dieselben Wertebereiche wie das Backend; gültige gespeicherte Werte werden nicht mehr durch engere UI-Grenzen verändert.
+- Allgemeine Einstellungen und Zugriffsschutz werden getrennt gespeichert, ohne andere Entwürfe zu verlieren. Ungespeicherte Änderungen werden beim Verlassen berücksichtigt.
+- Diagnose auf kleinen Bildschirmen scrollbar, neutrale Flächen im Dark Mode lesbar, Navigation und Gerätedetails per Tastatur bedienbar.
+
+### Prüfungen
+- Regressionstests für Sicherheitsgrenzen, Gruppenauflösung, überlappende Gruppen, 429-Retry, Alles-Reihenfolge, Cluster-Pausen, Diagnose, Mapping, MQTT und UI ergänzt.
+- Lokale Browserprüfung mit simulierten API-Antworten für Desktop/Mobil, Dark Mode, Speichern und Tastaturbedienung. Kein Nachweis der tatsächlichen Zigbee-Reaktionszeiten.
+
 ## [2.5.12] - 2026-09-06
 ### Veröffentlichung
 - Aktuellen Entwicklungsstand auf `main` übernommen, einschließlich Ablauf-Clustern, Lampendiagnose, Funkmaßnahmen und der unten dokumentierten Stabilitäts- und Sicherheitskorrekturen.
 - Anwendungscode entspricht `2.5.12-dev`; die stabile Version wird ohne `-dev` angezeigt. README unterscheidet beide Branches und beschreibt die einmalige Sicherung beim Update älterer Installationen.
 
+## [2.5.12-dev] - 2026-09-06
 ### Korrekturen
 - Serverlog aktualisiert auch Einträge mit gleich langer, aber geänderter Meldung oder Uhrzeit.
 

@@ -9,8 +9,8 @@
     <style>
         :root { --bg: #f4f6f8; --card: #fff; --text: #1c1c1e; --accent: #85c440; --border: #e1e4e8; }
         @media (prefers-color-scheme: dark) { :root { --bg: #000; --card: #1c1c1e; --text: #f2f2f7; --border: #38383a; } }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .setup-card { background: var(--card); padding: 40px; border-radius: 16px; border: 1px solid var(--border); width: 100%; max-width: 400px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100dvh; margin: 0; padding: 12px; box-sizing: border-box; }
+        .setup-card { box-sizing: border-box; background: var(--card); padding: 28px; border-radius: 16px; border: 1px solid var(--border); width: 100%; max-width: 480px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
         h1 { color: var(--accent); margin-bottom: 10px; }
         p { color: #888; margin-bottom: 30px; line-height: 1.5; }
         input[type="text"], input[type="number"] { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 16px; background: transparent; color: var(--text); box-sizing: border-box; margin-bottom: 15px; text-align: center; }
@@ -54,6 +54,7 @@
             <span>Debug Logs aktivieren</span>
         </div>
         <button onclick="saveConfig()">💾 Speichern & Starten</button>
+        <div id="saveError" class="error" role="alert"></div>
     </div>
     <div id="step4" class="step">
         <h2 style="color:var(--accent)">Fertig! 🎉</h2>
@@ -95,8 +96,19 @@
         const loxPort = document.getElementById('loxPort').value;
         const debug = document.getElementById('debugMode').checked;
         if(!loxIp) return alert("Bitte Loxone IP eingeben");
-        await fetch('/api/setup/loxone', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ loxoneIp: loxIp, loxonePort: loxPort, debug: debug }) });
-        showStep('step4');
+        const button = document.querySelector('#step3 button');
+        if (button.disabled) return;
+        const error = document.getElementById('saveError');
+        error.textContent = '';
+        button.disabled = true;
+        try {
+            const response = await fetch('/api/setup/loxone', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ loxoneIp: loxIp, loxonePort: loxPort, debug: debug }) });
+            const result = await response.json();
+            if (!response.ok || result.success !== true) throw new Error(result.error || 'Speichern fehlgeschlagen.');
+            showStep('step4');
+        } catch (e) {
+            error.textContent = 'Nicht gespeichert: ' + e.message;
+        } finally { button.disabled = false; }
     }
 </script>
 </body>

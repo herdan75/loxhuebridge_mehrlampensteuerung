@@ -101,3 +101,19 @@ test('Logger - DB Fehler bleibt RAM-Fallback', () => {
     logger.warn('Fallback RAM Entry');
     assert.strictEqual(logger.getLogs(10)[0].msg, 'Fallback RAM Entry');
 });
+
+test('Review F12: Laufender Schreibfehler erhaelt Log im begrenzten RAM-Puffer', () => {
+    logger.init(fs.mkdtempSync(path.join(os.tmpdir(), 'loxhue-diskfull-')), false, false);
+    logger.ramLogs = [];
+    logger.insertLogStmt = { run() { throw new Error('SQLITE_FULL'); } };
+    logger.info('Befehl nach vollem Datentraeger');
+    assert.strictEqual(logger.disableLogDisk, true);
+    assert.strictEqual(logger.dbError, 'SQLITE_FULL');
+    assert.strictEqual(logger.getRawDb(), null);
+    assert.ok(logger.getLogs(10).some(row => row.msg === 'Befehl nach vollem Datentraeger'));
+    assert.ok(logger.getLogs(10).some(row => row.msg.includes('RAM-Modus')));
+    logger.updateConfig(false, false);
+    assert.strictEqual(logger.disableLogDisk, false);
+    assert.strictEqual(logger.dbError, null);
+    logger.close();
+});

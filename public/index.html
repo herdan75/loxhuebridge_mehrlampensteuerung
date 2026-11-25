@@ -14,11 +14,11 @@
     <header><h1>loxHueBridge</h1><p style="color:var(--text-muted)">Dashboard</p></header>
     
     <div class="tabs">
-        <div class="tab active" data-tab="light" onclick="setTab('light')">💡 Lichter</div>
-        <div class="tab" data-tab="sensor" onclick="setTab('sensor')">📡 Sensoren</div>
-        <div class="tab" data-tab="button" onclick="setTab('button')">🔘 Schalter</div>
-        <div class="tab" data-tab="system" onclick="setTab('system')">⚙️ System</div>
-        <div class="tab" data-tab="diag" onclick="setTab('diag')">🩺 Diagnose</div>
+        <button type="button" class="tab active" data-tab="light" onclick="setTab('light')">💡 Lichter</button>
+        <button type="button" class="tab" data-tab="sensor" onclick="setTab('sensor')">📡 Sensoren</button>
+        <button type="button" class="tab" data-tab="button" onclick="setTab('button')">🔘 Schalter</button>
+        <button type="button" class="tab" data-tab="system" onclick="setTab('system')">⚙️ System</button>
+        <button type="button" class="tab" data-tab="diag" onclick="setTab('diag')">🩺 Diagnose</button>
     </div>
 
     <div id="main-interface" class="tab-content active">
@@ -59,10 +59,14 @@
         <div class="card">
             <table class="settings-table" id="settingsTable"><tr><td>Lade...</td><td></td></tr></table>
             <div style="text-align: right; margin-top: 15px;">
-                <button class="add-btn" style="width:auto; margin:0;" onclick="saveSettings()">Speichern</button>
+                <button id="saveSettingsButton" class="add-btn" style="width:auto; margin:0;" onclick="saveSettings()">Allgemeine Einstellungen speichern</button>
             </div>
         </div>
         
+        <h2>Sicherheit / Zugriffsschutz</h2>
+        <div class="card">
+            <table class="settings-table" id="securityTable"></table>
+        </div>
         <h2>Wartung & Backup</h2>
         <div class="card">
             <div class="maintenance-actions" style="display:flex; gap:10px; margin-bottom:15px;">
@@ -104,7 +108,7 @@
     </div>
 </div>
 
-<div id="exportModal" class="modal-overlay">
+<div id="exportModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Export Auswahl" tabindex="-1">
     <div class="modal-box">
         <div class="modal-header">
             <h2 style="margin:0">Export Auswahl</h2>
@@ -118,11 +122,11 @@
     </div>
 </div>
 
-<div id="detailsModal" class="modal-overlay">
+<div id="detailsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Geräte Details" tabindex="-1">
     <div class="modal-box details-modal-box">
         <div class="modal-header">
             <h2 style="margin:0">Geräte Details</h2>
-            <button class="btn-link" onclick="closeDetailsModal()">✕</button>
+            <button class="btn-link" aria-label="Gerätedetails schließen" onclick="closeDetailsModal()">✕</button>
         </div>
         <div class="modal-body">
             <div id="detailsContent"></div>
@@ -136,6 +140,7 @@
 </div>
 
 <script src="multisync.js"></script>
+<script src="settings-limits.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
