@@ -98,6 +98,8 @@ Ein Wert von 60-90 Sekunden ist meist zu aggressiv, weil er bei wenig Hue-Aktivi
 
 Diese Variante baut das Image direkt aus deinem lokalen Fork-Verzeichnis. Damit ist sichergestellt, dass wirklich der Code aus diesem Repository verwendet wird und nicht das Original-Image.
 
+**Bei Installation auf LoxBerry:** Liegt das Projekt unter `/opt/loxberry`, direkt nach dem Klonen den [Ausschluss beim LoxBerry-Update](#loxberry-update-ausschluss) einrichten. Das gilt für `main` und `develop` sowie für bereits bestehende Installationen.
+
 1. **Repository klonen:**
 
     ```bash
@@ -118,6 +120,40 @@ Diese Variante baut das Image direkt aus deinem lokalen Fork-Verzeichnis. Damit 
     ```
 
 Der Ordner `data` enthält deine Konfiguration (`config.json`), Mappings (`mapping.json`) und die Log-Datenbank (`logs.db`).
+
+<a id="loxberry-update-ausschluss"></a>
+
+### LoxBerry: Projekt vor der Update-Bereinigung schützen
+
+Der LoxBerry-Updater gleicht sein Verzeichnis `/opt/loxberry` mit `rsync --delete` ab. Zusätzliche, nicht ausgeschlossene Programmdateien können dabei gelöscht werden. Ein Docker-Bind-Mount schützt die Dateien auf dem Host nicht vor dieser Bereinigung. Deshalb muss beispielsweise die Installation unter `/opt/loxberry/loxhuebridge_mehrlampensteuerung` ausdrücklich ausgeschlossen werden.
+
+**Einmalig nach der Neuinstallation, spätestens vor dem nächsten LoxBerry-Update:** Als `root` in PuTTY/SSH die folgenden Befehle nacheinander ausführen. Sie ergänzen nur die benutzerdefinierte Ausschlussliste, erhalten bestehende Einträge und fügen denselben Eintrag bei erneuter Ausführung nicht doppelt hinzu.
+
+1. Ausschlussdatei festlegen:
+
+    ```bash
+    exclude=/opt/loxberry/config/system/update-exclude.userdefined
+    ```
+
+2. Den kompletten Projektordner ausschließen:
+
+    ```bash
+    grep -qxF '/loxhuebridge_mehrlampensteuerung/' "$exclude" || printf '\n%s\n' '/loxhuebridge_mehrlampensteuerung/' >> "$exclude"
+    ```
+
+3. Eintrag kontrollieren:
+
+    ```bash
+    grep -nFx '/loxhuebridge_mehrlampensteuerung/' "$exclude"
+    ```
+
+Die Ausgabe enthält eine Zeilennummer und den Pfad, beispielsweise `6:/loxhuebridge_mehrlampensteuerung/`. **Das ist eine Ausgabe, kein weiterer Befehl.** Keine Ausgabe oder eine Fehlermeldung bedeutet, dass der Eintrag noch geprüft werden muss. Ein Neustart von LoxBerry oder Container ist nicht erforderlich.
+
+Der Pfad in der Ausschlussliste ist relativ zu `/opt/loxberry`: Bei einem anderen Projektordner den Eintrag entsprechend anpassen, nicht den vollständigen Host-Pfad eintragen. Für Installationen außerhalb von `/opt/loxberry` ist diese Ausnahme nicht erforderlich. Nur `update-exclude.userdefined` bearbeiten, nicht `update-exclude.system`; die benutzerdefinierte Datei bleibt beim normalen Update-Abgleich erhalten.
+
+Der Ausschluss umfasst den Projektordner einschließlich seines Unterordners `data`, aber keine separat abgelegten Daten oder Sicherungsordner. Auch die unten gezeigten Sicherungen `/opt/loxberry/loxhuebridge-backup.*` liegen außerhalb dieser Ausnahme. Wichtige Sicherungen deshalb außerhalb von `/opt/loxberry` aufbewahren, zusätzlich beispielsweise auf einem PC oder NAS. Der Ausschluss ersetzt keine Datensicherung und stellt bereits gelöschte Dateien nicht wieder her. Normale Updates von loxHueBridge mit Git und Docker bleiben unverändert möglich.
+
+Quellen: [LoxBerry-Updater](https://github.com/mschlenstedt/Loxberry/blob/master/sbin/loxberryupdate.pl), [benutzerdefinierte Ausschlussliste](https://github.com/mschlenstedt/Loxberry/blob/master/config/system/update-exclude.userdefined), [System-Ausschlussregeln](https://github.com/mschlenstedt/Loxberry/blob/master/config/system/update-exclude.system).
 
 ### Datenordner / `DATA_DIR`
 
@@ -175,6 +211,8 @@ Dieses Repository verwendet zwei Branches:
 Wenn kein Branch angegeben wird, wird normalerweise `main` installiert. Das ist die empfohlene Variante für den normalen Betrieb.
 
 ### Develop frisch installieren
+
+Auf LoxBerry bei einem Projektpfad unter `/opt/loxberry` ebenfalls den [Update-Ausschluss](#loxberry-update-ausschluss) einrichten.
 
 ```bash
 git clone -b develop https://github.com/herdan75/loxhuebridge_mehrlampensteuerung.git
@@ -238,6 +276,8 @@ services:
 
 ## 🔄 Update dieses Forks
 
+Bei einer Installation unter `/opt/loxberry` den [LoxBerry-Update-Ausschluss](#loxberry-update-ausschluss) einmalig nachtragen, falls er noch fehlt. Ein `git pull` richtet diese Ausnahme nicht automatisch ein.
+
 Für den stabilen Branch `main`:
 
 ```bash
@@ -261,6 +301,8 @@ docker compose up -d --build
 ## 🛠 Manuelle Installation (Experten)
 
 Falls du kein Docker nutzen möchtest, benötigst du **Node.js 24** oder neuer.
+
+Auch ohne Docker gilt bei Installation unter `/opt/loxberry` der [LoxBerry-Update-Ausschluss](#loxberry-update-ausschluss).
 
 ```bash
 git clone https://github.com/herdan75/loxhuebridge_mehrlampensteuerung.git
