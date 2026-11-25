@@ -6,7 +6,7 @@ const vm = require('node:vm');
 function createUi(responses = {}) {
     const elements = new Map();
     const context = vm.createContext({
-        console, setTimeout, clearTimeout, SettingsLimits: require('../public/settings-limits'),
+        console, setTimeout, clearTimeout, setInterval: () => 1, clearInterval() {}, SettingsLimits: require('../public/settings-limits'),
         confirm: () => false, alert: () => {},
         document: { getElementById(id) {
             if (!elements.has(id)) elements.set(id, { innerHTML: '', value: '', style: {} });
@@ -16,7 +16,7 @@ function createUi(responses = {}) {
     });
     const source = fs.readFileSync(require.resolve('../public/app.js'), 'utf8').replace(/\binit\(\);\s*$/, '');
     vm.runInContext(source, context);
-    vm.runInContext('renderMultiSyncPreview = () => {}; loadMappings = async () => {}; loadStatus = async () => {};', context);
+    vm.runInContext('const realLoadStatus = loadStatus; renderMultiSyncPreview = () => {}; loadMappings = async () => {}; loadStatus = async () => {};', context);
     return { context, elements };
 }
 
@@ -29,8 +29,9 @@ test('Review F02: settings, diagnostics and inline arguments escape untrusted te
         '/api/diagnostics/lampen': [{ mapping: { deviceName: hostile, multiSync: true, syncCluster: hostile } }]
     });
     await vm.runInContext('loadSettings()', ui.context);
+    vm.runInContext('currentTab = "diag"', ui.context);
     await vm.runInContext('loadDiagnostics()', ui.context);
-    for (const id of ['settingsTable', 'diagContent']) {
+    for (const id of ['settingsTable', 'diagContent', 'lampDiagnosticsRows']) {
         const html = ui.elements.get(id).innerHTML;
         assert.doesNotMatch(html, /<img/);
         assert.match(html, /&lt;img/);
@@ -92,4 +93,91 @@ test('Netzstart UI: ungueltige Frist oder leeres Zahlenfeld wird nicht gespeiche
     vm.runInContext('updateDetailsDraft("power_on_delay_ms", "")', context);
     await vm.runInContext('saveDetailsSettings()', context);
     assert.equal(saves, 0);
+});
+
+test('Details save is single-flight and prevents editing or closing during the request', async () => {
+    const { context, elements } = createUi();
+    let release;
+    let requests = 0;
+    context.apiRequest = () => { requests++; return new Promise(resolve => { release = resolve; }); };
+    vm.runInContext('mappings = [{loxone_name:"a"}, {loxone_name:"b"}]; detailsDraft = createDetailsDraft(mappings[0]); renderMappings = () => {}; closeModal = () => {}; showToast = () => {};', context);
+    const saving = vm.runInContext('saveDetailsSettings()', context);
+    await vm.runInContext('saveDetailsSettings(); updateDetailsDraft("sync_cluster", "changed"); closeDetailsModal(); showDetails("b", "b")', context);
+    assert.equal(requests, 1);
+    assert.equal(vm.runInContext('detailsDraft.loxoneName', context), 'a');
+    assert.equal(vm.runInContext('detailsDraft.values.sync_cluster', context), '');
+    assert.equal(elements.get('detailsContent').inert, true);
+    release({ mapping: { loxone_name: 'a', sync_cluster: 'saved' } });
+    await saving;
+    assert.equal(vm.runInContext('detailsBusy', context), false);
+    assert.equal(elements.get('detailsContent').inert, false);
+    assert.equal(vm.runInContext('mappings[1].loxone_name', context), 'b');
+});
+
+test('Late details response is bound to the original mapping even if the draft changes', async () => {
+    const { context } = createUi();
+    let release;
+    context.apiRequest = () => new Promise(resolve => { release = resolve; });
+    vm.runInContext('mappings = [{loxone_name:"a"}, {loxone_name:"b"}]; detailsDraft = createDetailsDraft(mappings[0]); renderMappings = () => {}; closeModal = () => { throw new Error("must not close new draft"); }; showToast = () => {};', context);
+    const saving = vm.runInContext('saveDetailsSettings()', context);
+    vm.runInContext('detailsDraft = createDetailsDraft(mappings[1])', context);
+    release({ mapping: { loxone_name: 'a', sync_cluster: 'saved' } });
+    await saving;
+    assert.equal(vm.runInContext('mappings.map(m => m.loxone_name).join(",")', context), 'a,b');
+    assert.equal(vm.runInContext('detailsDraft.loxoneName', context), 'b');
+});
+
+test('Failed details save retains the draft and allows retry', async () => {
+    const { context, elements } = createUi();
+    context.apiRequest = async () => { throw new Error('Speicher voll'); };
+    vm.runInContext('detailsDraft = createDetailsDraft({loxone_name:"a"})', context);
+    await vm.runInContext('saveDetailsSettings()', context);
+    assert.equal(vm.runInContext('detailsDraft.loxoneName', context), 'a');
+    assert.equal(vm.runInContext('detailsBusy', context), false);
+    assert.match(elements.get('detailsSaveStatus').textContent, /Speicher voll/);
+});
+
+test('Status polling updates the open detail status without rebuilding its draft or controls', async () => {
+    const { context, elements } = createUi();
+    context.apiRequest = async () => ({ lamp: { on: 1, bri: 31 } });
+    elements.set('detailsContent', { innerHTML: 'untouched controls', scrollTop: 250 });
+    vm.runInContext('detailsDraft = createDetailsDraft({loxone_name:"lamp"}); updateDetailsDraft("sync_cluster", "unsaved"); renderMappings = () => {};', context);
+    await vm.runInContext('realLoadStatus()', context);
+    assert.match(elements.get('detailsLiveStatus').innerHTML, /31 %/);
+    assert.equal(elements.get('detailsContent').innerHTML, 'untouched controls');
+    assert.equal(elements.get('detailsContent').scrollTop, 250);
+    assert.equal(vm.runInContext('detailsDraft.values.sync_cluster', context), 'unsaved');
+    assert.equal(vm.runInContext('detailsDraftChanged()', context), true);
+});
+
+test('Automatic diagnostics refresh reads only local counters and records a timestamp', async () => {
+    const { context, elements } = createUi();
+    const urls = [];
+    context.apiRequest = async url => { urls.push(url); return [{ name: 'lamp', uuid: 'one', befehle: 2 }]; };
+    vm.runInContext('currentTab = "diag"', context);
+    await vm.runInContext('loadLampDiagnostics()', context);
+    await vm.runInContext('loadLampDiagnostics()', context);
+    assert.deepEqual(urls, ['/api/diagnostics/lampen', '/api/diagnostics/lampen']);
+    assert.match(elements.get('lampDiagnosticsUpdated').textContent, /Aktualisiert:/);
+    assert.match(elements.get('lampDiagnosticsRows').innerHTML, /lamp/);
+    context.apiRequest = async () => { throw new Error('offline'); };
+    const previousHtml = elements.get('lampDiagnosticsRows').innerHTML;
+    await vm.runInContext('loadLampDiagnostics()', context);
+    assert.equal(elements.get('lampDiagnosticsRows').innerHTML, previousHtml);
+    assert.match(elements.get('lampDiagnosticsError').textContent, /offline/);
+});
+
+test('Diagnostics polling does not overlap or apply responses after leaving the tab', async () => {
+    const { context, elements } = createUi();
+    let release;
+    let requests = 0;
+    context.apiRequest = () => { requests++; return new Promise(resolve => { release = resolve; }); };
+    vm.runInContext('currentTab = "diag"', context);
+    const pending = vm.runInContext('loadLampDiagnostics()', context);
+    await vm.runInContext('loadLampDiagnostics()', context);
+    assert.equal(requests, 1);
+    vm.runInContext('currentTab = "light"; diagnosticsLoadId++', context);
+    release([{ name: 'old' }]);
+    await pending;
+    assert.equal(elements.has('lampDiagnosticsRows'), false);
 });

@@ -51,7 +51,7 @@ if (configManager.isConfigured) {
 }
 
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '10mb', inflate: false }));
 app.use(auth.requireAuth);
 
 app.use((req, res, next) => { 

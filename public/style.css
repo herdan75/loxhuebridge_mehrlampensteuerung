@@ -442,6 +442,8 @@ input:checked + .slider:before { transform: translateX(18px); }
 .diag-table { min-width: 980px; }
 .diag-table th,
 .diag-table td { white-space: nowrap; }
+.diag-table th { padding: 8px 12px; text-align: left; }
+.diag-table td { padding: 8px 12px; }
 .diag-table td:first-child,
 .diag-table th:first-child { white-space: normal; min-width: 210px; }
 
@@ -468,3 +470,4 @@ input:checked + .slider:before { transform: translateX(18px); }
     .power-start-field { grid-template-columns: minmax(0, 1fr); gap: 6px; }
     .power-start-field input { width: 120px; justify-self: end; }
 }
+.diagnostics-updated { color: var(--text-muted); font-size: 0.85rem; }

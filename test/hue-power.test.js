@@ -75,6 +75,59 @@ test('Netzstart: fehlgeschlagenes ON wird wiederholt und GET bestaetigt unabhaen
     assert.equal(f.hue.httpsAgent.keepAlive, true);
 });
 
+test('Netzstart: AN/0 statt 31 wird nachgesteuert, der Status zeigt den gelesenen Istwert', async t => {
+    const f = fixture(t, { get: () => ({ data: { data: [{ on: { on: true },
+        dimming: { brightness: f.calls.puts.length === 1 ? 0 : 30.76 } }] } }) });
+    f.config.statusCache.power = { on: 1, bri: 0 };
+    await f.hue.executeCommand(f.entry, '31');
+    await until(() => f.calls.puts.length === 2);
+    assert.equal(f.config.statusCache.power.bri, 0);
+    assert.equal(f.hue.getLampDiagnostics()[0].bestaetigt, 0);
+    await until(() => f.hue.getLampDiagnostics()[0].startupStatus === 'confirmed');
+    assert.equal(f.config.statusCache.power.bri, 30.76);
+    assert.equal(f.calls.puts.length, 2);
+});
+
+test('Netzstart: neuerer SSE-Bericht mit 0 Prozent gewinnt gegen eine verspätete GET-Antwort mit 31', async t => {
+    const { PassThrough } = require('node:stream');
+    const stream = new PassThrough();
+    let release;
+    const f = fixture(t, { stream, get: url => {
+        const light = { id: 'power', type: 'light', on: { on: true }, dimming: { brightness: 0 } };
+        if (url.endsWith('/light/power')) {
+            const response = { data: { data: [{ ...light, dimming: { brightness: 31 } }] } };
+            if (!release) return new Promise(resolve => { release = () => resolve(response); });
+            return response;
+        }
+        return { data: { data: url.endsWith('/light') ? [light] : [] } };
+    } });
+    await f.hue.startEventStream();
+    await f.hue.executeCommand(f.entry, '31');
+    await until(() => release);
+    stream.write('data: [{"type":"update","data":[{"id":"power","type":"light","dimming":{"brightness":0}}]}]\n\n');
+    release();
+    await until(() => f.calls.puts.length === 2);
+    assert.equal(f.config.statusCache.power.bri, 0);
+    assert.equal(f.hue.getLampDiagnostics()[0].bestaetigt, 0);
+    await until(() => f.hue.getLampDiagnostics()[0].startupStatus === 'confirmed');
+    assert.equal(f.config.statusCache.power.bri, 31);
+});
+
+test('Netzstart: eine durch Aus abgelöste Zustandsabfrage überschreibt nicht den Status', async t => {
+    let release;
+    const f = fixture(t, { get: () => new Promise(resolve => {
+        release = () => resolve({ data: { data: [{ on: { on: true }, dimming: { brightness: 31 } }] } });
+    }) });
+    f.config.statusCache.power = { on: 0, bri: 0 };
+    await f.hue.executeCommand(f.entry, '31');
+    await until(() => release);
+    await f.hue.executeCommand(f.entry, '0');
+    release();
+    await until(() => f.hue.getLampDiagnostics()[0].startupStatus === 'off');
+    assert.deepEqual(f.config.statusCache.power, { on: 0, bri: 0 });
+    assert.equal(f.calls.puts.length, 2);
+});
+
 test('Netzstart: OFF waehrend Wiederholung verhindert jedes spaetere ON', async t => {
     const f = fixture(t, { put: n => {
         if (n === 1) throw Object.assign(new Error('timeout'), { code: 'ECONNABORTED' });

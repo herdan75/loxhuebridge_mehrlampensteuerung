@@ -10,7 +10,17 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.14-dev Mehrlampensteuerung
+## 🚀 Features V2.5.15-dev Mehrlampensteuerung
+
+### Änderungen in 2.5.15-dev
+
+- Abhängigkeiten sicherheitsaktualisiert; komprimierte JSON-Anfragen werden abgelehnt. Normale Loxone-Steuerpfade und JSON-Backups bleiben unverändert nutzbar.
+- Konfiguration und Backups werden auf Datentypen, Wertebereiche, Zugriffsschutz und Gruppen geprüft. Reservierte Objektnamen sind als Gerätekennung ausgeschlossen; Statusdaten verwenden geschützte Wörterbücher.
+- Native Hue-Gruppenbefehle halten auch bei 429-Wiederholungen mindestens eine Sekunde Abstand ein. Bestehende Einzellicht-, Cluster- und globale Raten bleiben erhalten.
+- Netzstart und normale Zustandsprüfung übernehmen gelesene Istwerte ins Dashboard. Neuere SSE-Berichte, überholende Befehle und jüngere Abfrageergebnisse haben Vorrang.
+- Ausschalten einer netzgeschalteten Lampe wird bei vorübergehenden Fehlern begrenzt wiederholt: höchstens drei Versuche in maximal drei Sekunden, ohne Anlaufwartezeit.
+- Gerätedetails zeigen den laufend aktualisierten Status und sperren paralleles Speichern. Die Zuverlässigkeitsdiagnose aktualisiert lokale Zähler alle zwei Sekunden mit Zeitstempel, ohne zusätzliche Hue-Abfragen.
+- Backups werden als JSON-Datei mit Zeitstempel heruntergeladen, statt die Dashboard-Seite zu ersetzen.
 
 ### Änderungen in 2.5.14-dev
 
@@ -185,7 +195,7 @@ Dieses Repository verwendet zwei Branches:
 | Branch | Version | Zweck |
 | --- | --- | --- |
 | `main` | `2.5.12` | Stabiler Stand für den normalen Betrieb, inkl. Mehrlampengruppen, Ablauf-Clustern, Effekt-Fallback und Stabilitätskorrekturen |
-| `develop` | `2.5.14-dev` | Weiterentwicklungsstand mit Netzstart-Behandlung sowie Sicherheits-, Reihenfolge-, Diagnose- und Bedienungskorrekturen; noch nicht in `main` enthalten |
+| `develop` | `2.5.15-dev` | Weiterentwicklungsstand mit Netzstart-Behandlung, sicherem Backup-Import, Statusabgleich und Live-Diagnose; noch nicht in `main` enthalten |
 
 Wenn kein Branch angegeben wird, wird normalerweise `main` installiert. Das ist die empfohlene Variante für den normalen Betrieb.
 
@@ -211,7 +221,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.14-dev
+Version: 2.5.15-dev
 ```
 
 ### Zurück auf main
@@ -401,7 +411,7 @@ Wenn der Wandschalter gleichzeitig Strom und Loxone-Lichtbefehl auslöst, kann d
 
 **Verhalten:** Nach dem Multi-Sync-Zeitplan wird ohne zusätzliche Standardwartezeit gesendet. Bei fehlender Bestätigung wird frühestens nach 300 ms bzw. nach der Übergangszeit nachgelesen. Falls bekannt, wird auch die Hue-Zigbee-Erreichbarkeit abgefragt, damit ein gespeicherter Lichtzustand einer unerreichbaren Lampe nicht als Erfolg zählt. Wiederholungsabstände steigen von 250 auf maximal 1000 ms; maximal 8 Versuche innerhalb der eingestellten Frist. Ein gemeldeter Wiederanschluss kann eine Anlaufwartezeit verkürzen. Eine bereits bestätigte, weiter erreichbare Lampe bekommt bei normalen Szenenwechseln keine zusätzliche Anlaufwartezeit.
 
-Nur der neueste Befehl derselben Lampe bleibt gültig. Ein neuer Szenenwert ersetzt den alten Sollwert, ohne eine noch laufende Anlauffrist ständig zu verlängern. **Aus** beendet ausstehende Einschaltwiederholungen und wird ohne Anlaufwartezeit einmal gesendet; ein bereits übertragenes Paket lässt sich nicht zurückholen. Neustart beendet alle Startaufträge. Es wird nicht unbegrenzt nachgeregelt. Ein physischer Stromausfall ist erst bekannt, wenn Hue ihn meldet oder ein Befehl scheitert; es gibt keine Rückmeldung vom Netzrelais.
+Nur der neueste Befehl derselben Lampe bleibt gültig. Ein neuer Szenenwert ersetzt den alten Sollwert, ohne eine noch laufende Anlauffrist ständig zu verlängern. **Aus** beendet ausstehende Einschaltwiederholungen und wird ohne Anlaufwartezeit gesendet. Bei vorübergehenden Fehlern (z. B. 429, Timeout oder `communication_error`) erfolgen höchstens drei Ausschaltversuche innerhalb von maximal drei Sekunden, begrenzt durch eine gegebenenfalls kürzere Wiederanlaufzeit. Ein neuer Einschaltbefehl ersetzt wartende Ausschaltversuche. Ein bereits übertragenes Paket lässt sich nicht zurückholen. Neustart beendet alle Startaufträge. Es wird nicht unbegrenzt nachgeregelt. Ein physischer Stromausfall ist erst bekannt, wenn Hue ihn meldet oder ein Befehl scheitert; es gibt keine Rückmeldung vom Netzrelais.
 
 Die Netzstart-Behandlung ersetzt bei aktivierter Option die drei zusätzlichen Funkmaßnahmen dieser Lampe. Ihre gespeicherte Auswahl bleibt erhalten und wird nach Deaktivierung wieder verwendet. Normale Hue-Gruppen/Räume/Zonen bleiben **ein nativer Gruppenbefehl**; anschließend werden nur markierte Mitglieder geprüft und nötigenfalls einzeln korrigiert. Die Anlaufwartezeit verzögert keinen nativen Gruppenbefehl. Effekt-Fallbacks bleiben Einzellichtbefehle; bei Effekten werden Übertragungsfehler wiederholt, aber der sichtbare Effekt wird nicht über `on`/Helligkeit verifiziert. `alert` ist ein einmaliger Hinweis und wird nicht als Netzstart wiederholt.
 
@@ -526,6 +536,8 @@ Die öffentliche [Hue-Performance-Empfehlung](https://developers.meethue.com/sup
 
 Der Tab **Diagnose** enthält zusätzlich eine Zuverlässigkeitstabelle für Lampenbefehle seit dem letzten Neustart.
 
+Solange der Tab geöffnet ist, aktualisieren sich die Zuverlässigkeitszähler alle zwei Sekunden. **Aktualisiert** zeigt den Zeitpunkt des letzten erfolgreichen Abrufs. Bei einem Abruffehler bleiben die bisherigen Werte mit Fehlermeldung stehen. Die Aktualisierung liest nur lokale Serverdaten; Bridge-/Zigbee-Daten werden beim Öffnen des Tabs oder über **Aktualisieren** neu angefragt. Auch der Status im geöffneten Geräte-Detailfenster wird alle zwei Sekunden aktualisiert, ohne Eingaben, Fokus oder den Einstellungsentwurf zurückzusetzen. Während des Speicherns sind Änderungen und Schließen kurz gesperrt.
+
 | Wert | Bedeutung |
 | --- | --- |
 | Befehle | Anzahl der von loxHueBridge gesendeten logischen Lampenbefehle |
@@ -539,7 +551,11 @@ Der Tab **Diagnose** enthält zusätzlich eine Zuverlässigkeitstabelle für Lam
 | Nachgesteuert | Anzahl der erneut gesendeten Payloads nach bestätigter Abweichung |
 | Mapping | Loxone-/Hue-Zuordnung mit Device, Multi-Sync-Gruppe und Ablauf-Cluster |
 
+**„Bestätigt“, aber aktuell „AN / 0 %“?** Die Diagnose beschreibt den letzten Befehl zum Zeitpunkt seiner Bestätigung. Der Gerätestatus zeigt dagegen die zuletzt gemeldeten Werte für Ein/Aus und Helligkeit; er misst nicht, ob die Leuchte sichtbar brennt. Beim Netzstart übernimmt das Dashboard auch die beim Nachlesen von Hue gemeldeten Werte, nicht den gewünschten Sollwert. Meldet Hue dabei „AN / 0 %“, obwohl z. B. 31 % angefordert waren, wird im laufenden Anlauffenster nachgesteuert. Eine spätere Bedienung nach abgeschlossener Bestätigung wird nicht rückgängig gemacht. Bei einem Aussetzer die Uhrzeit notieren und die Helligkeit desselben Leuchtenteils in der Hue-App vergleichen, bevor erneut geschaltet wird.
+
 Diese Diagnose ersetzt keine echte Zigbee-Funkmessung, macht aber sichtbar, welche einzelne Lampe bei Szenen oder schnellen Farbwechseln auffällig reagiert.
+
+Auch **Zustand nachlesen und korrigieren** übernimmt Ein/Aus und Helligkeit aus der Hue-Antwort in die Statusanzeige. Neuere Hue-Ereignisse und später eingegangene Steuerbefehle werden nicht von einer verspäteten Abfrage überschrieben. Dies erzeugt keine zusätzlichen Abfragen gegenüber der ausgewählten Funkmaßnahme.
 
 Die Zählung funktioniert unabhängig vom Debug-Modus. Ohne passende Zustandsänderung kann eine SSE-Bestätigung ausbleiben, obwohl der Sollwert bereits gesetzt ist. Das gilt nicht automatisch als Fehler. Farben und Effekte werden durch diese Ein/Aus-/Helligkeitsdiagnose nicht vollständig bestätigt. Zwischenstände während eines Übergangs zählen nicht als Widerspruch.
 
@@ -551,7 +567,13 @@ Ein erfolgreicher HTTP-PUT ist nur eine Annahme durch die Bridge, kein bestätig
 
 Gespeichert wird über temporäre Dateien mit atomarem Austausch. Der gemeinsame Config-/Mapping-Restore verwendet zusätzlich ein Wiederherstellungsjournal; nach einem unterbrochenen Restore stellt der nächste Start beide vorherigen Dateien wieder her. Speicherfehler werden als Fehler an die UI zurückgegeben. Ein ungültiger Datenbestand wird nicht still durch eine leere Konfiguration ersetzt.
 
-Mapping-Namen müssen nach Kleinschreibung eindeutig und URL-tauglich sein. `all`/`alles` sind nur für das ausdrückliche Global-Mapping zulässig; API- und Discovery-Namen sind reserviert. Mehrere unterschiedliche Namen für dieselbe Light-UUID bleiben möglich. Bestehende Dateien werden beim Start nicht umgeschrieben; ungültige Einträge müssen vor dem nächsten Speichern oder Restore korrigiert werden. Fehler lassen den bisherigen Datenbestand erhalten.
+Mapping-Namen müssen nach Kleinschreibung eindeutig und URL-tauglich sein. `all`/`alles` sind nur für das ausdrückliche Global-Mapping zulässig; API-, Discovery- und JavaScript-Objektnamen (z. B. `__proto__` oder `constructor`) sind reserviert. Mehrere unterschiedliche Namen für dieselbe Light-UUID bleiben möglich. Konfiguration und Mapping werden auch beim Start geprüft, aber dabei nicht umgeschrieben. Ungültige Dateien führen zu einer klaren Fehlermeldung statt zum Start mit unsicherer oder leerer Konfiguration. Fehler lassen den bisherigen Datenbestand erhalten.
+
+### Backup-Download und Wiederherstellung
+
+**Backup erstellen** lädt eine JSON-Datei mit Zeitstempel herunter. Diese enthält Zugangsdaten und gehört an einen geschützten Speicherort. **Backup ohne Zugangsdaten** eignet sich zum Weitergeben für Diagnosen, nicht zur Wiederherstellung. Beide Downloads werden mit `Cache-Control: no-store` ausgeliefert.
+
+Der Import prüft vor dem Schreiben insbesondere echte Boolean-Werte (z. B. `authEnabled: true`, nicht `"true"`), Ports von 1 bis 65535, Timing-Grenzen, Passwort-Hash und Gruppenkennungen. Aktivierter Zugriffsschutz benötigt einen gültigen Passwort-Hash oder Token. Ältere Backups mit fehlenden optionalen Feldern bleiben unterstützt; vorhandene ungültige Werte werden nicht still umgedeutet. Bei Ablehnung bleiben Konfiguration und Mapping unverändert. JSON-Anfragen dürfen nicht HTTP-komprimiert sein (`Content-Encoding: gzip` wird mit 415 abgelehnt); der normale Browser-Import sendet unkomprimiertes JSON.
 
 Bei SQLite-Lese-/Schreibfehlern hält der Logger neue Einträge in einem begrenzten RAM-Puffer und zeigt den degradierten Zustand unter System an. RAM-Logs gehen beim Neustart verloren. Nach Behebung, etwa Freigeben von Speicherplatz, versucht **Allgemeine Einstellungen speichern** bei deaktiviertem SD-Card Mode die Datenbank erneut zu öffnen. Alte Datenbankeinträge werden nicht gelöscht, die zwischenzeitlichen RAM-Einträge aber nicht nachträglich in SQLite übertragen.
 

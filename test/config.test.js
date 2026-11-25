@@ -122,3 +122,31 @@ test('ConfigManager - Add Detected Item', (t) => {
     configManager.addDetectedItem('new_light');
     assert.strictEqual(configManager.detectedItems.length, 1);
 });
+
+test('Restore rejects invalid configuration before touching files or runtime', () => {
+    const beforeConfig = fs.readFileSync(configManager.configFile, 'utf8');
+    const beforeMapping = fs.readFileSync(configManager.mappingFile, 'utf8');
+    const beforeRuntime = structuredClone(configManager.config);
+    for (const change of [
+        { authEnabled: 'true' }, { authEnabled: true, authToken: '', authPasswordHash: '' },
+        { loxonePort: -1 }, { mqttPort: 65536 }, { debug: 1 }, { throttleTime: null },
+        { authPasswordHash: 'pbkdf2$1$salt$hash' }, { multiLightControl: [] },
+        { multiLightControl: { groups: [{ id: 'a' }, { id: 'a' }] } },
+        { multiLightControl: { groups: [{ id: 'a', batchSize: 0 }] } },
+        JSON.parse('{"__proto__":{"polluted":true}}')
+    ]) {
+        assert.throws(() => configManager.restore({ ...beforeRuntime, ...change }, []), { statusCode: 400 });
+        assert.throws(() => configManager.saveConfig({ ...beforeRuntime, ...change }), { statusCode: 400 });
+        assert.strictEqual(fs.readFileSync(configManager.configFile, 'utf8'), beforeConfig);
+        assert.strictEqual(fs.readFileSync(configManager.mappingFile, 'utf8'), beforeMapping);
+        assert.deepStrictEqual(configManager.config, beforeRuntime);
+        assert.ok(!fs.existsSync(path.join(configManager.dataDir, '.restore-pending.json')));
+    }
+});
+
+test('Restore accepts old configurations with missing optional settings', () => {
+    configManager.restore({ bridgeIp: 'hue.local', multiLightControl: { batchSize: 10 } }, []);
+    assert.strictEqual(configManager.config.multiLightControl.groups.length, 5);
+    assert.strictEqual(configManager.config.multiLightControl.groups[0].batchSize, 10);
+    assert.strictEqual(configManager.config.authEnabled, false);
+});

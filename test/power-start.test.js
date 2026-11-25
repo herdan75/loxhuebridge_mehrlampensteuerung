@@ -107,6 +107,28 @@ test('Netzstart: maximal acht Versuche und kein endloser Offline-Verkehr', async
     assert.equal(f.phases.at(-1), 'expired');
 });
 
+test('OFF retries stop after three attempts and use at most a three-second window', async t => {
+    const f = fixture(t);
+    f.controller.submit('lamp', f.request({ isOn: false, send: async attempt => { f.calls.push(attempt); throw new Error('offline'); } }));
+    assert.equal(f.controller.state('lamp').job.deadline - Date.now(), 3000);
+    await f.advance();
+    await f.advance(250);
+    await f.advance(500);
+    await f.advance(30000);
+    assert.deepEqual(f.calls, [1, 2, 3]);
+    assert.equal(f.phases.at(-1), 'failed');
+});
+
+test('A newer ON cancels a pending OFF retry', async t => {
+    const f = fixture(t);
+    f.controller.submit('lamp', f.request({ isOn: false, send: async () => { f.calls.push('off'); throw new Error('429'); } }));
+    await f.advance();
+    f.controller.submit('lamp', f.request({ send: async () => f.calls.push('on') }));
+    await f.advance();
+    await f.advance(30000);
+    assert.deepEqual(f.calls, ['off', 'on']);
+});
+
 test('Netzstart: Zeitlimit, permanente Fehler und Shutdown beenden Wiederholungen', async t => {
     const f = fixture(t);
     f.controller.submit('lamp', f.request({ windowMs: 2000, delayMs: 2000 }));

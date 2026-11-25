@@ -3,6 +3,13 @@ const assert = require('node:assert/strict');
 const { validateMappings } = require('../lib/mapping');
 const lamp = { hue_type: 'light', hue_uuid: 'light-1', loxone_name: 'living' };
 
+test('Mapping rejects object prototype names and resource identifiers', () => {
+    for (const name of ['__proto__', 'constructor', 'prototype', 'toString', 'hasOwnProperty']) {
+        assert.throws(() => validateMappings([{ ...lamp, loxone_name: name }]), { statusCode: 400 });
+        assert.throws(() => validateMappings([{ ...lamp, hue_uuid: name }]), { statusCode: 400 });
+    }
+});
+
 test('Review F10: Mapping rejects duplicates, reserved names, paths and conflicting options', () => {
     for (const items of [
         [lamp, { ...lamp, loxone_name: 'LIVING' }], [{ ...lamp, loxone_name: 'all' }],

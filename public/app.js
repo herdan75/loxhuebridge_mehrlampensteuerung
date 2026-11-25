@@ -4,6 +4,9 @@
     let status = {};
     let detectedHistory = [];
     let logInterval = null;
+    let diagnosticsInterval = null;
+    let diagnosticsLoadId = 0;
+    let lampDiagnosticsRequest = null;
     let allSelected = false;
     let currentLogFilter = 'ALL';
     let cachedLogs = [];
@@ -12,6 +15,8 @@
     let multiLightControlSettings = { groups: MULTI_SYNC_GROUP_IDS.map(id => ({ id, name: `Gruppe ${id.toUpperCase()}` })) };
     let securitySettings = { authEnabled: false, authUser: 'admin', passwordConfigured: false };
     let detailsDraft = null;
+    let detailsBusy = false;
+    let statusBusy = false;
     let settingsDirty = false;
     let securityDirty = false;
     let settingsBusy = false;
@@ -46,6 +51,9 @@
         }
         debugLog(`Tab: ${tab}`);
         currentTab = tab;
+        diagnosticsLoadId++;
+        clearInterval(diagnosticsInterval);
+        diagnosticsInterval = null;
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
         const hint = document.getElementById('hintAll');
@@ -102,10 +110,14 @@
     async function loadDiagnostics() {
         const div = document.getElementById('diagContent');
         if(!div) return;
+        const loadId = ++diagnosticsLoadId;
+        clearInterval(diagnosticsInterval);
+        diagnosticsInterval = null;
         div.innerHTML = '<div style="text-align:center">Lade Daten...</div>';
         
         await loadMappings();
         await loadStatus();
+        if (loadId !== diagnosticsLoadId) return;
 
         const typeConfig = {
             'light':  { icon: '💡', label: 'Licht', order: 1 },
@@ -156,6 +168,7 @@
             const bridgeRes = await fetch('/api/diagnostics/bridge');
             if (!bridgeRes.ok) throw new Error('Bridge API nicht verfügbar');
             const diagData = await bridgeRes.json();
+            if (loadId !== diagnosticsLoadId) return;
             if (!diagData) throw new Error('Keine Daten');
 
             // Zigbee Bridge-Info
@@ -222,19 +235,63 @@
             div.innerHTML += bridgeHtml + capsHtml;
 
         } catch(e) {
+            if (loadId !== diagnosticsLoadId) return;
             div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Bridge-Diagnose nicht verfügbar: ${escapeHtml(e.message)}</div>`;
         }
 
+        div.innerHTML += '<section id="lampDiagnostics"><h3>Zuverlässigkeit der Lampenbefehle</h3><p id="lampDiagnosticsUpdated" class="diagnostics-updated"></p><p id="lampDiagnosticsError" role="status"></p><div id="lampDiagnosticsRows"></div></section>';
+        div.querySelectorAll?.('table').forEach(table => {
+            if (table.parentElement.classList.contains('diag-scroll')) return;
+            const scroll = document.createElement('div');
+            scroll.className = 'diag-scroll';
+            scroll.tabIndex = 0;
+            scroll.setAttribute('role', 'region');
+            scroll.setAttribute('aria-label', 'Diagnosetabelle');
+            table.before(scroll);
+            scroll.appendChild(table);
+        });
+        await loadLampDiagnostics(loadId);
+        if (loadId === diagnosticsLoadId && currentTab === 'diag') {
+            diagnosticsInterval = setInterval(() => loadLampDiagnostics(loadId), 2000);
+        }
+    }
+
+    async function loadLampDiagnostics(loadId = diagnosticsLoadId) {
+        if (currentTab !== 'diag' || loadId !== diagnosticsLoadId || lampDiagnosticsRequest?.loadId === loadId) return;
+        const request = { loadId };
+        lampDiagnosticsRequest = request;
         try {
-            const lampRes = await fetch('/api/diagnostics/lampen');
-            if (!lampRes.ok) throw new Error('Lampendiagnose nicht verfügbar');
-            const lampRows = await lampRes.json();
-            let lampHtml = '<h3 style="margin-top: 30px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">📶 Zuverlässigkeit der Lampenbefehle</h3>';
+            const lampRows = await apiRequest('/api/diagnostics/lampen');
+            if (loadId !== diagnosticsLoadId || currentTab !== 'diag') return;
+            if (!Array.isArray(lampRows)) throw new Error('Ungültige Lampendiagnose');
+            const div = document.getElementById('lampDiagnosticsRows');
+            if (!div) return;
+            const html = lampDiagnosticsHtml(lampRows);
+            if (div._diagnosticsHtml !== html) {
+                const left = div.querySelector?.('.diag-scroll')?.scrollLeft || 0;
+                div.innerHTML = html;
+                div._diagnosticsHtml = html;
+                const scroll = div.querySelector?.('.diag-scroll');
+                if (scroll) scroll.scrollLeft = left;
+            }
+            document.getElementById('lampDiagnosticsUpdated').textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE');
+            document.getElementById('lampDiagnosticsError').textContent = '';
+        } catch (e) {
+            if (loadId === diagnosticsLoadId && currentTab === 'diag') {
+                document.getElementById('lampDiagnosticsError').textContent = 'Aktualisierung fehlgeschlagen: ' + e.message;
+            }
+        } finally {
+            if (lampDiagnosticsRequest === request) lampDiagnosticsRequest = null;
+        }
+    }
+
+    function lampDiagnosticsHtml(lampRows) {
+            let lampHtml = '';
 
             if (!lampRows.length) {
                 lampHtml += `<p style="color:var(--text-muted)">Noch keine Lampenbefehle seit dem letzten Neustart erfasst.</p>`;
             } else {
-                lampHtml += `<div class="diag-scroll"><table class="settings-table diag-table"><thead><tr>
+                lampHtml += `<div class="diag-scroll" tabindex="0" role="region" aria-label="Zuverlässigkeit der Lampenbefehle"><table class="settings-table diag-table"><thead><tr>
                     <th>Loxone Name</th>
                     <th>Befehle</th>
                     <th>Bestätigt</th>
@@ -267,13 +324,13 @@
 
                     lampHtml += `<tr>
                         <td><div style="font-weight:bold">${escapeHtml(row.name || row.uuid)}</div><div style="font-size:0.75em;color:#888;font-family:monospace">${escapeHtml(row.uuid)}</div></td>
-                        <td style="text-align:right">${row.befehle || 0}</td>
-                        <td style="text-align:right">${row.bestaetigt || 0}</td>
-                        <td style="text-align:right;color:${color};font-weight:bold">${row.widersprueche || 0}</td>
+                        <td style="text-align:right">${Number(row.befehle) || 0}</td>
+                        <td style="text-align:right">${Number(row.bestaetigt) || 0}</td>
+                        <td style="text-align:right;color:${color};font-weight:bold">${Number(row.widersprueche) || 0}</td>
                         <td style="text-align:right;color:${color}">${quote} %</td>
-                        <td style="text-align:right">${row.verifiziert || 0}</td>
-                        <td style="text-align:right">${row.nachgesteuert || 0}</td>
-                        <td style="text-align:right;color:${(row.communicationErrors || 0) ? 'orange' : 'inherit'}">${row.communicationErrors || 0}</td>
+                        <td style="text-align:right">${Number(row.verifiziert) || 0}</td>
+                        <td style="text-align:right">${Number(row.nachgesteuert) || 0}</td>
+                        <td style="text-align:right;color:${(row.communicationErrors || 0) ? 'orange' : 'inherit'}">${Number(row.communicationErrors) || 0}</td>
                         <td style="text-align:right">${Number(row.requestErrors) || 0}</td>
                         <td style="font-size:0.8em">${startup}${row.startupStatus ? `<br>${Number(row.startupAttempts) || 0} Versuch(e)` : ''}</td>
                         <td style="font-size:0.8em">${mappingText}</td>
@@ -283,20 +340,7 @@
                 lampHtml += `</tbody></table></div>`;
             }
 
-            div.innerHTML += lampHtml;
-        } catch(e) {
-            div.innerHTML += `<div style="color:var(--text-muted);margin-top:20px;text-align:center;">⚠️ Lampendiagnose nicht verfügbar: ${escapeHtml(e.message)}</div>`;
-        }
-        div.querySelectorAll?.('table').forEach(table => {
-            if (table.parentElement.classList.contains('diag-scroll')) return;
-            const scroll = document.createElement('div');
-            scroll.className = 'diag-scroll';
-            scroll.tabIndex = 0;
-            scroll.setAttribute('role', 'region');
-            scroll.setAttribute('aria-label', 'Diagnosetabelle');
-            table.before(scroll);
-            scroll.appendChild(table);
-        });
+            return lampHtml;
     }
 
     async function loadDetected() {
@@ -497,7 +541,16 @@
 
     async function loadTargets() { try { targets = await apiRequest('/api/targets'); if(currentTab!=='system') renderDropdown(); } catch(e){ console.error("Fehler bei loadTargets:", e); } }
     async function loadMappings() { try { mappings = await apiRequest('/api/mapping'); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadMappings:", e); } }
-    async function loadStatus() { try { status = await apiRequest('/api/status'); if(currentTab!=='system') renderMappings(); } catch(e){ console.error("Fehler bei loadStatus:", e); } }
+    async function loadStatus() {
+        if (statusBusy) return;
+        statusBusy = true;
+        try {
+            status = await apiRequest('/api/status');
+            if (currentTab !== 'system') renderMappings();
+            refreshDetailsStatus();
+        } catch (e) { console.error('Fehler bei loadStatus:', e); }
+        finally { statusBusy = false; }
+    }
     async function loadMultiSyncSettingsCache() {
         try {
             const s = await (await fetch('/api/settings')).json();
@@ -1072,7 +1125,7 @@
     }
 
     function updateDetailsDraft(key, value) {
-        if (!detailsDraft) return;
+        if (!detailsDraft || detailsBusy) return;
         if (key === 'power_on_delay_ms' || key === 'power_retry_window_ms') {
             detailsDraft.values[key] = value === '' ? NaN : Number(value);
             return;
@@ -1141,8 +1194,19 @@
         setTimeout(() => toast.remove(), 2600);
     }
 
+    function setDetailsBusy(busy) {
+        detailsBusy = busy;
+        const modal = document.getElementById('detailsModal');
+        modal?.setAttribute?.('aria-busy', String(busy));
+        modal?.querySelectorAll?.('.modal-header button, .modal-actions button').forEach(button => { button.disabled = busy; });
+        const content = document.getElementById('detailsContent');
+        if (content) content.inert = busy;
+    }
+
     async function saveDetailsSettings() {
+        if (detailsBusy) return;
         if (!detailsDraft) return closeModal('detailsModal');
+        const draft = detailsDraft;
         const statusEl = document.getElementById('detailsSaveStatus');
         const offset = normalizeSyncOffset(detailsDraft.values.sync_offset_ms, null);
         if (offset === null) {
@@ -1158,39 +1222,75 @@
             return;
         }
         if (statusEl) statusEl.textContent = 'Speichere...';
+        setDetailsBusy(true);
 
         try {
-            const payload = await apiRequest(`/api/mapping/${encodeURIComponent(detailsDraft.loxoneName)}/settings`, {
+            const payload = await apiRequest(`/api/mapping/${encodeURIComponent(draft.loxoneName)}/settings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
 
-            const index = mappings.findIndex(m => m.loxone_name === detailsDraft.loxoneName);
+            if (payload.mapping?.loxone_name !== draft.loxoneName) throw new Error('Unerwartete Geräteantwort. Bitte neu laden.');
+            const index = mappings.findIndex(m => m.loxone_name === draft.loxoneName);
             if (index >= 0) mappings[index] = payload.mapping;
             renderMappings();
             if (currentTab === 'system') renderMultiSyncPreview();
-            detailsDraft = null;
-            closeModal('detailsModal');
+            if (detailsDraft === draft) {
+                detailsDraft = null;
+                closeModal('detailsModal');
+            }
             showToast('Einstellungen gespeichert');
         } catch (error) {
-            if (statusEl) statusEl.textContent = error.message;
+            if (detailsDraft === draft && statusEl) statusEl.textContent = error.message;
+        } finally {
+            setDetailsBusy(false);
         }
     }
 
     function closeDetailsModal() {
+        if (detailsBusy) return;
         if (detailsDraftChanged() && !confirm('Änderungen verwerfen?')) return;
         detailsDraft = null;
         closeModal('detailsModal');
     }
 
+    function detailsStatusHtml(loxoneName) {
+        const currentStatus = status[loxoneName] || {};
+        const safeHex = safeHexColor(currentStatus.hex);
+        const isOn = currentStatus.on === 1 || currentStatus.on === true;
+        let content = '<h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">⚡ Aktueller Status</h3><table class="details-table">';
+        if (currentStatus.on !== undefined) content += `<tr><td>Zustand</td><td>${isOn ? '<span class="status-ok">AN</span>' : '<span style="color:#888">AUS</span>'}</td></tr>`;
+        if (isOn) {
+            if (currentStatus.bri !== undefined) content += `<tr><td>Helligkeit</td><td>${Math.round(currentStatus.bri)} %</td></tr>`;
+            if (currentStatus.mirek) content += `<tr><td>Temperatur</td><td>${Math.round(1000000 / currentStatus.mirek)} K</td></tr>`;
+            if (currentStatus.hex) content += `<tr><td>Farbe</td><td><span class="color-dot" style="background-color:${safeHex}"></span> <span style="font-family:monospace">${escapeHtml(safeHex)}</span></td></tr>`;
+        }
+        if (currentStatus.bat !== undefined) content += `<tr><td>Batterie</td><td>${escapeHtml(currentStatus.bat)} %</td></tr>`;
+        if (currentStatus.temp !== undefined) content += `<tr><td>Temperatur</td><td>${escapeHtml(currentStatus.temp)} °C</td></tr>`;
+        if (currentStatus.lux !== undefined) content += `<tr><td>Helligkeit</td><td>${escapeHtml(currentStatus.lux)} lx</td></tr>`;
+        if (currentStatus.contact !== undefined) content += `<tr><td>Kontakt</td><td>${currentStatus.contact === 1 ? '🔓 Offen' : '🔒 Geschlossen'}</td></tr>`;
+        if (currentStatus.motion !== undefined) content += `<tr><td>Bewegung</td><td>${currentStatus.motion === 1 ? '🏃 Ja' : '🧘 Nein'}</td></tr>`;
+        return content + '</table>';
+    }
+
+    function refreshDetailsStatus() {
+        if (!detailsDraft) return;
+        const live = document.getElementById('detailsLiveStatus');
+        if (!live) return;
+        const html = detailsStatusHtml(detailsDraft.loxoneName);
+        if (live._statusHtml !== html) {
+            live.innerHTML = html;
+            live._statusHtml = html;
+        }
+    }
+
     function showDetails(uuid, loxoneName) {
+        if (detailsBusy) return;
         const target = targets.find(t => t.uuid === uuid);
         const entry = mappings.find(m => m.loxone_name === loxoneName);
-        const currentStatus = status[loxoneName] || {};
         if(!target || !entry) return;
         detailsDraft = createDetailsDraft(entry);
-        const safeHex = safeHexColor(currentStatus.hex);
 
         let content = `<div style="margin-bottom:20px;">`;
 
@@ -1264,7 +1364,7 @@
                             <input id="details_powerDelay" type="number" min="0" max="10000" step="1" value="${Number(detailsDraft.values.power_on_delay_ms)}" oninput="updateDetailsDraft('power_on_delay_ms', this.value)">
                         </label>
                         <label class="power-start-field" for="details_powerWindow">
-                            ${infoLabel('Wiederanlaufzeit (ms)', 'Standard 15000: maximal 15 Sekunden ab Übergabe an den Netzstart, höchstens 8 Sendeversuche. Muss länger als die Anlaufwartezeit sein. Aus beendet den Start und wird ohne Anlaufwartezeit einmal gesendet. Keine unbegrenzten Wiederholungen. Ein Neustart der Lampe selbst lässt sich nicht beschleunigen.')}
+                            ${infoLabel('Wiederanlaufzeit (ms)', 'Standard 15000: maximal 15 Sekunden ab Übergabe an den Netzstart, höchstens 8 Einschaltversuche. Muss länger als die Anlaufwartezeit sein. Aus beendet den Start und wird ohne Anlaufwartezeit gesendet; bei vorübergehenden Fehlern höchstens 3 Versuche innerhalb von maximal 3 Sekunden. Keine unbegrenzten Wiederholungen. Ein Neustart der Lampe selbst lässt sich nicht beschleunigen.')}
                             <input id="details_powerWindow" type="number" min="2000" max="60000" step="1" value="${Number(detailsDraft.values.power_retry_window_ms)}" oninput="updateDetailsDraft('power_retry_window_ms', this.value)">
                         </label>
                     </div>
@@ -1313,26 +1413,7 @@
         }
 
         // 2. STATUS & SPECS (für alle Geräte)
-        content += `<h3 style="margin-top:0; font-size:1rem; color:var(--text-main);">⚡ Aktueller Status</h3><table class="details-table">`;
-        const isOn = currentStatus.on === 1 || currentStatus.on === true;
-        
-        if (currentStatus.on !== undefined) {
-            content += `<tr><td>Zustand</td><td>${isOn ? '<span class="status-ok">AN</span>' : '<span style="color:#888">AUS</span>'}</td></tr>`;
-        }
-        
-        if (isOn) {
-            if (currentStatus.bri !== undefined) content += `<tr><td>Helligkeit</td><td>${Math.round(currentStatus.bri)} %</td></tr>`;
-            if (currentStatus.mirek) content += `<tr><td>Temperatur</td><td>${Math.round(1000000 / currentStatus.mirek)} K</td></tr>`;
-            if (currentStatus.hex) content += `<tr><td>Farbe</td><td><span class="color-dot" style="background-color:${safeHex}"></span> <span style="font-family:monospace">${escapeHtml(safeHex)}</span></td></tr>`;
-        }
-
-        // Sensor Stats
-        if (currentStatus.bat !== undefined) content += `<tr><td>Batterie</td><td>${escapeHtml(currentStatus.bat)} %</td></tr>`;
-        if (currentStatus.temp !== undefined) content += `<tr><td>Temperatur</td><td>${escapeHtml(currentStatus.temp)} °C</td></tr>`;
-        if (currentStatus.lux !== undefined) content += `<tr><td>Helligkeit</td><td>${escapeHtml(currentStatus.lux)} lx</td></tr>`;
-        if (currentStatus.contact !== undefined) content += `<tr><td>Kontakt</td><td>${currentStatus.contact === 1 ? '🔓 Offen' : '🔒 Geschlossen'}</td></tr>`;
-        if (currentStatus.motion !== undefined) content += `<tr><td>Bewegung</td><td>${currentStatus.motion === 1 ? '🏃 Ja' : '🧘 Nein'}</td></tr>`;
-
+        content += `<div id="detailsLiveStatus">${detailsStatusHtml(loxoneName)}</div><table class="details-table">`;
         content += `<tr><td colspan="2" style="border-bottom:none; padding-top:20px; color:var(--text-muted); font-weight:bold;">📋 Technische Daten</td></tr>`;
         content += `<tr><td>Name</td><td>${escapeHtml(target.name)}</td></tr>`;
         content += `<tr><td>Loxone ID</td><td>${escapeHtml(loxoneName)}</td></tr>`;
@@ -1419,7 +1500,7 @@
 
     if (typeof window !== 'undefined' && window.addEventListener) {
         window.addEventListener('beforeunload', event => {
-            if (settingsDirty || securityDirty || detailsDraftChanged() || settingsBusy || securityBusy) {
+            if (settingsDirty || securityDirty || detailsDraftChanged() || detailsBusy || settingsBusy || securityBusy) {
                 event.preventDefault();
                 event.returnValue = '';
             }

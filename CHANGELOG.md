@@ -1,3 +1,20 @@
+## [2.5.15-dev] - 2026-11-25
+### Sicherheit und Backups
+- Express, body-parser, follow-redirects und qs auf kompatible Sicherheitsstände aktualisiert. HTTP-komprimierte JSON-Anfragen werden vor dem Entpacken abgelehnt.
+- Gemeinsame Konfigurationsprüfung für Start, Speichern und Restore: Datentypen, Wertebereiche, Authentifizierung und Multi-Sync-Gruppen. Fehlerhafte Backups werden vor Dateiveränderungen zurückgewiesen; optionale Legacy-Felder bleiben unterstützt.
+- Reservierte Objektnamen in Mappings abgewiesen und gerätebezogene Wörterbücher gegen Prototype-Manipulation abgesichert.
+- Backup-Export mit Download-Dateiname, Zeitstempel und Cache-Sperre; reduziertes Backup bleibt ausdrücklich nicht wiederherstellbar.
+
+### Steuerung und Status
+- Mindestabstand nativer Gruppenbefehle gilt auch für 429-Retries. Einzellicht-Raten und globale Begrenzung bleiben bestehen.
+- Netzstart und normale Zustandsprüfung aktualisieren den Statuscache aus tatsächlich gelesenen Hue-Werten. Neuere SSE-Berichte, jüngere abgeschlossene Abfragen und überholende Befehle verhindern veraltete Rückmeldungen.
+- Ausschalten netzgeschalteter Lampen wird bei vorübergehenden Fehlern höchstens dreimal innerhalb von maximal drei Sekunden versucht. Neuere Befehle ersetzen wartende Wiederholungen.
+
+### Bedienung und Prüfungen
+- Geräte-Speicherung an den ursprünglichen Entwurf gebunden; keine parallelen Speicheranfragen und kein Gerätewechsel während des Speicherns. Fehler erhalten den Entwurf.
+- Live-Status im offenen Detailfenster ohne Verlust ungespeicherter Einstellungen. Zuverlässigkeitsdiagnose mit automatischem lokalem Abruf, Zeitstempel und sichtbaren Abruffehlern; keine zusätzlichen Bridge-Abfragen.
+- Regressionstests für die korrigierten Fehler, echte lokale HTTP-/Restore-/Auth-Laufwege und Desktop-/Mobil-Browserprüfung mit simulierten Daten. Keine physischen Lampen geschaltet; keine Garantie für reale Zigbee-Einschaltzeiten.
+
 ## [2.5.14-dev] - 2026-10-16
 ### Netzgeschaltete Lampen
 - Option pro Light-UUID für Netzspannung erst mit Lichtbefehl; Standard aus. Anlaufwartezeit standardmäßig 0 ms, begrenzter Wiederanlauf standardmäßig 15 Sekunden und höchstens 8 Einzellichtversuche.
