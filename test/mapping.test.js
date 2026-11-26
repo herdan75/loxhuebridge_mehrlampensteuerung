@@ -27,6 +27,21 @@ test('Review F10: Legacy defaults and explicit global target remain supported', 
     assert.equal(result[0].power_switched, false);
     assert.equal(result[0].power_on_delay_ms, 0);
     assert.equal(result[0].power_retry_window_ms, 15000);
+    assert.equal(result[0].transition_time_ms, null);
+});
+
+test('Per-light transition accepts inheritance, zero and bounded integer durations only', () => {
+    for (const value of [undefined, null, '', '  ', 0, 1500, 60000]) {
+        const [entry] = validateMappings([{ ...lamp, transition_time_ms: value }]);
+        assert.equal(entry.transition_time_ms, typeof value === 'number' ? value : null);
+    }
+    for (const value of [-1, 60001, 1.5, NaN, Infinity, '500', true, {}, []]) {
+        assert.throws(() => validateMappings([{ ...lamp, transition_time_ms: value }]), { statusCode: 400 });
+    }
+    for (const hue_type of ['group', 'sensor', 'button']) {
+        assert.throws(() => validateMappings([{ ...lamp, hue_type, transition_time_ms: 0 }]), { statusCode: 400 });
+        assert.equal(validateMappings([{ ...lamp, hue_type, transition_time_ms: null }])[0].transition_time_ms, null);
+    }
 });
 
 test('Netzstart: validierte Einstellung nur pro Lampe, sinnvolle Grenzen und Zeitrelation', () => {

@@ -1000,7 +1000,7 @@
                 <tr><td>${infoLabel('UDP Port', 'UDP-Port am Loxone Miniserver, auf den Statusmeldungen gesendet werden. Muss zur virtuellen UDP-Eingangskonfiguration passen.')}</td><td><input type="number" id="sys_loxPort" value="${v(s.loxone_port)}"></td></tr>
                 
                 <tr>
-                    <td>${infoLabel('Übergangszeit', 'Hue Dynamics Dauer für weiche Übergänge. Höher wirkt sanfter, aber träger. Für schnelle Szenen eher 0-100 ms testen.')}</td>
+                    <td>${infoLabel('Übergangszeit', 'Globale Hue Dynamics Dauer für weiche Übergänge. Einzelne Lampen können in ihren Gerätedetails eine eigene Dauer verwenden; ein leeres Feld übernimmt diesen Wert. Dynamics ignorieren hat Vorrang. Höher wirkt sanfter, aber träger.')}</td>
                     <td>
                         <div class="slider-container">
                             <input type="range" id="sys_transition" min="0" max="1000" step="50" value="${v(s.transitionTime)}" oninput="document.getElementById('val_trans').innerText = this.value + ' ms'">
@@ -1067,6 +1067,7 @@
             original: {
                 sync_lox: entry.sync_lox === true,
                 ignore_dynamics: entry.ignore_dynamics === true,
+                transition_time_ms: entry.transition_time_ms ?? null,
                 multi_sync: entry.multi_sync === true,
                 multi_sync_group: normalizeMultiSyncGroup(entry.multi_sync_group),
                 sync_cluster: normalizeSyncCluster(entry.sync_cluster),
@@ -1081,6 +1082,7 @@
             values: {
                 sync_lox: entry.sync_lox === true,
                 ignore_dynamics: entry.ignore_dynamics === true,
+                transition_time_ms: entry.transition_time_ms ?? null,
                 multi_sync: entry.multi_sync === true,
                 multi_sync_group: normalizeMultiSyncGroup(entry.multi_sync_group),
                 sync_cluster: normalizeSyncCluster(entry.sync_cluster),
@@ -1126,6 +1128,17 @@
 
     function updateDetailsDraft(key, value) {
         if (!detailsDraft || detailsBusy) return;
+        if (key === 'transition_time_ms') {
+            const input = document.getElementById('details_transitionTime');
+            detailsDraft.values[key] = input?.validity?.badInput ? NaN : value === '' ? null : Number(value);
+            return;
+        }
+        if (key === 'ignore_dynamics') {
+            detailsDraft.values.ignore_dynamics = value === true;
+            const input = document.getElementById('details_transitionTime');
+            if (input) input.disabled = value === true;
+            return;
+        }
         if (key === 'power_on_delay_ms' || key === 'power_retry_window_ms') {
             detailsDraft.values[key] = value === '' ? NaN : Number(value);
             return;
@@ -1181,6 +1194,7 @@
 
     function detailsDraftChanged() {
         if (!detailsDraft) return false;
+        if (Number.isNaN(detailsDraft.values.transition_time_ms)) return true;
         return JSON.stringify(detailsDraft.original) !== JSON.stringify(detailsDraft.values);
     }
 
@@ -1215,6 +1229,12 @@
         }
 
         const body = { ...detailsDraft.values, sync_offset_ms: offset };
+        const transitionLimits = SettingsLimits.transitionTime;
+        if (body.transition_time_ms !== null && (!Number.isInteger(body.transition_time_ms)
+            || body.transition_time_ms < transitionLimits.min || body.transition_time_ms > transitionLimits.max)) {
+            if (statusEl) statusEl.textContent = `Übergangszeit: leer für global oder ganze Zahl von ${transitionLimits.min} bis ${transitionLimits.max} ms.`;
+            return;
+        }
         if (!Number.isInteger(body.power_on_delay_ms) || body.power_on_delay_ms < 0 || body.power_on_delay_ms > 10000
             || !Number.isInteger(body.power_retry_window_ms) || body.power_retry_window_ms < 2000 || body.power_retry_window_ms > 60000
             || body.power_retry_window_ms <= body.power_on_delay_ms) {
@@ -1330,7 +1350,7 @@
                     <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">Sendet Statusänderungen per UDP an Loxone zurück.</div>
                 </div>
 
-                <div class="settings-card" style="opacity: ${isStrictOnOff ? '0.6' : '1'};">
+                <div class="settings-card transition-settings" style="opacity: ${isStrictOnOff ? '0.6' : '1'};">
                     <label style="display:flex; align-items:center; gap:10px; cursor:${isStrictOnOff ? 'not-allowed' : 'pointer'};">
                         <input type="checkbox" ${ignoreDyn ? 'checked' : ''} ${disableIgnoreDyn} onchange="updateDetailsDraft('ignore_dynamics', this.checked)"> 
                         <span style="font-weight:500;">Dynamics ignorieren</span>
@@ -1338,6 +1358,11 @@
                     <div style="font-size:0.8rem; color:var(--text-muted); margin-left:24px; margin-top:2px;">
                         ${isStrictOnOff ? 'Dieses Gerät ist ein reiner On/Off Schalter und unterstützt kein Dimmen. Parameter ist erzwungen aktiv.' : 'Deaktiviert weiche Übergangszeiten (Transition) beim Schalten für dieses Gerät.'}
                     </div>
+                    ${entry.hue_type === 'light' ? `
+                    <div class="power-start-field">
+                        ${infoLabel('Übergangszeit (ms)', 'Leer: globale Übergangszeit verwenden. Eigener Wert: 0 bis 60000 ms, 0 bedeutet sofort. Gilt für Helligkeit, Farbe und Ausschalten bei Einzelbefehlen, auch in Multi-Sync. Dynamics ignorieren hat Vorrang. Reines Einschalten ohne Helligkeitswert, Hue-Effekte und native Hue-Gruppen behalten ihr bisheriges Verhalten. Keine zusätzliche Anlaufwartezeit.', 'details_transitionTime')}
+                        <input id="details_transitionTime" type="number" min="${SettingsLimits.transitionTime.min}" max="${SettingsLimits.transitionTime.max}" step="1" placeholder="Global" value="${escapeHtml(detailsDraft.values.transition_time_ms ?? '')}" ${ignoreDyn ? 'disabled' : ''} oninput="updateDetailsDraft('transition_time_ms', this.value)">
+                    </div>` : ''}
                 </div>
 
                 <div class="settings-card" style="display:${entry.hue_type === 'light' ? 'block' : 'none'};">

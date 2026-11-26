@@ -80,6 +80,28 @@ async function fixture(t, enabled = true, options = {}) {
     };
 }
 
+test('HTTP: individual transition persists through API, Hue command and backup export', { timeout: 20000 }, async t => {
+    const app = await fixture(t);
+    const post = body => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal((await app.request('/api/setup/loxone', post({ transitionTime: 400 }))).status, 200);
+    const base = { sync_lox: false, ignore_dynamics: false, multi_sync: false, sync_offset_ms: 0 };
+    for (const [transition_time_ms, duration] of [[2500, 2500], [0, 0], [null, 400]]) {
+        const response = await app.request('/api/mapping/test_lamp/settings', post({ ...base, transition_time_ms }));
+        assert.equal(response.status, 200);
+        assert.equal((await response.json()).mapping.transition_time_ms, transition_time_ms);
+        const before = app.puts.length;
+        assert.equal((await app.request('/test_lamp/80', {}, false)).status, 200);
+        await until(() => app.puts.length > before, app.output);
+        assert.equal(app.puts.at(-1).payload.dynamics.duration, duration);
+        const backup = await (await app.request('/api/system/backup')).json();
+        assert.equal(backup.mapping[0].transition_time_ms, transition_time_ms);
+        assert.equal(backup.config.transitionTime, 400);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(app.temp, 'mapping.json'), 'utf8'))[0].transition_time_ms, transition_time_ms);
+    }
+    assert.equal((await app.request('/api/mapping/test_lamp/settings', post({ ...base, transition_time_ms: -1 }))).status, 400);
+    assert.equal((await (await app.request('/api/mapping')).json())[0].transition_time_ms, null);
+});
+
 test('F15: echter HTTP-Server mit Auth, offenen Loxone-Befehlen, SSE und API-Neustart', { timeout: 20000 }, async t => {
     const app = await fixture(t);
     assert.equal((await app.request('/', {}, false)).status, 401);

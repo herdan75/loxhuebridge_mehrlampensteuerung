@@ -150,3 +150,20 @@ test('Restore accepts old configurations with missing optional settings', () => 
     assert.strictEqual(configManager.config.multiLightControl.groups[0].batchSize, 10);
     assert.strictEqual(configManager.config.authEnabled, false);
 });
+
+test('Per-light transitions survive save, reload and backup restore without changing the global value', () => {
+    const mapping = [undefined, null, 0, 2500].map((transition_time_ms, i) => ({
+        loxone_name: `transition_${i}`, hue_uuid: `light-${i}`, hue_type: 'light', transition_time_ms
+    }));
+    configManager.saveMapping(mapping);
+    const backup = JSON.parse(JSON.stringify({ config: configManager.config, mapping: configManager.mapping }));
+    configManager.mapping = [];
+    configManager.load();
+    assert.deepStrictEqual(configManager.mapping.map(m => m.transition_time_ms), [null, null, 0, 2500]);
+    configManager.restore(backup.config, backup.mapping);
+    assert.deepStrictEqual(configManager.mapping.map(m => m.transition_time_ms), [null, null, 0, 2500]);
+    assert.strictEqual(configManager.config.transitionTime, backup.config.transitionTime);
+    const before = fs.readFileSync(configManager.mappingFile, 'utf8');
+    assert.throws(() => configManager.restore(backup.config, [{ ...mapping[0], transition_time_ms: -1 }]), { statusCode: 400 });
+    assert.strictEqual(fs.readFileSync(configManager.mappingFile, 'utf8'), before);
+});

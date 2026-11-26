@@ -20,6 +20,71 @@ function createUi(responses = {}) {
     return { context, elements };
 }
 
+test('Transition UI: blank inherits, zero is explicit, ignoring dynamics retains the draft value', () => {
+    const { context, elements } = createUi();
+    vm.runInContext('detailsDraft = createDetailsDraft({loxone_name:"lamp"})', context);
+    assert.equal(vm.runInContext('detailsDraft.values.transition_time_ms', context), null);
+    for (const [input, expected] of [['1500', 1500], ['0', 0], ['', null]]) {
+        context.input = input;
+        vm.runInContext('updateDetailsDraft("transition_time_ms", input)', context);
+        assert.equal(vm.runInContext('detailsDraft.values.transition_time_ms', context), expected);
+    }
+    vm.runInContext('updateDetailsDraft("transition_time_ms", "2000"); updateDetailsDraft("ignore_dynamics", true)', context);
+    assert.equal(elements.get('details_transitionTime').disabled, true);
+    assert.equal(vm.runInContext('detailsDraft.values.transition_time_ms', context), 2000);
+    vm.runInContext('updateDetailsDraft("ignore_dynamics", false)', context);
+    assert.equal(elements.get('details_transitionTime').disabled, false);
+    assert.equal(vm.runInContext('detailsDraft.values.transition_time_ms', context), 2000);
+});
+
+test('Transition UI: invalid inputs cannot silently save as global inheritance', async () => {
+    const { context, elements } = createUi();
+    let saves = 0;
+    context.apiRequest = async () => { saves++; };
+    vm.runInContext('detailsDraft = createDetailsDraft({loxone_name:"lamp"})', context);
+    for (const value of ['-1', '60001', '1.5', 'invalid']) {
+        context.value = value;
+        vm.runInContext('updateDetailsDraft("transition_time_ms", value)', context);
+        await vm.runInContext('saveDetailsSettings()', context);
+        assert.match(elements.get('detailsSaveStatus').textContent, /Übergangszeit/);
+    }
+    elements.get('details_transitionTime').validity = { badInput: true };
+    vm.runInContext('updateDetailsDraft("transition_time_ms", "")', context);
+    await vm.runInContext('saveDetailsSettings()', context);
+    assert.equal(vm.runInContext('detailsDraftChanged()', context), true);
+    assert.equal(saves, 0);
+});
+
+test('Transition UI: save serializes null and zero distinctly, failed save retains own value', async () => {
+    const { context } = createUi();
+    const saved = [];
+    context.apiRequest = async (url, options) => {
+        saved.push(JSON.parse(options.body));
+        return { mapping: { loxone_name: 'lamp', ...saved.at(-1) } };
+    };
+    vm.runInContext('mappings = [{loxone_name:"lamp"}]; renderMappings = () => {}; closeModal = () => {}; showToast = () => {};', context);
+    for (const value of ['', '0', '2500']) {
+        context.value = value;
+        vm.runInContext('detailsDraft = createDetailsDraft(mappings[0]); updateDetailsDraft("transition_time_ms", value)', context);
+        await vm.runInContext('saveDetailsSettings()', context);
+    }
+    assert.deepEqual(saved.map(s => s.transition_time_ms), [null, 0, 2500]);
+    context.apiRequest = async () => { throw new Error('offline'); };
+    vm.runInContext('detailsDraft = createDetailsDraft(mappings[0]); updateDetailsDraft("transition_time_ms", "3000")', context);
+    await vm.runInContext('saveDetailsSettings()', context);
+    assert.equal(vm.runInContext('detailsDraft.values.transition_time_ms', context), 3000);
+    assert.equal(vm.runInContext('mappings[0].transition_time_ms', context), 2500);
+});
+
+test('Transition UI: only individual lights show the optional duration with shared bounds', () => {
+    const { context, elements } = createUi();
+    vm.runInContext('openModal = () => {}; targets = [{uuid:"one"},{uuid:"room"}]; mappings = [{loxone_name:"lamp",hue_uuid:"one",hue_type:"light",transition_time_ms:0},{loxone_name:"room",hue_uuid:"room",hue_type:"group"}];', context);
+    vm.runInContext('showDetails("one", "lamp")', context);
+    assert.match(elements.get('detailsContent').innerHTML, /id="details_transitionTime"[^>]*max="60000"[^>]*placeholder="Global"[^>]*value="0"/);
+    vm.runInContext('showDetails("room", "room")', context);
+    assert.doesNotMatch(elements.get('detailsContent').innerHTML, /id="details_transitionTime"/);
+});
+
 test('Review F02: settings, diagnostics and inline arguments escape untrusted text', async () => {
     const hostile = '\"><img src=x onerror=window.x=1>';
     const ui = createUi({

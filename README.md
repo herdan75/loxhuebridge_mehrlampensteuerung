@@ -10,9 +10,16 @@ Sie ermöglicht eine extrem schnelle, lokale Steuerung ohne Cloud-Verzögerung u
 
 ---
 
-## 🚀 Features V2.5.15 Mehrlampensteuerung
+## 🚀 Features V2.5.16-dev Mehrlampensteuerung
 
-`main` (`2.5.15`) und `develop` (`2.5.15-dev`) enthalten derzeit denselben Anwendungscode, dieselben Abhängigkeiten und dieselben Tests. Nur die Versionskennung unterscheidet die Branches. Die vorhandenen Korrekturen aus dem Entwicklungsstand sind damit auch im stabilen Branch enthalten.
+`main` bleibt auf dem stabilen Stand `2.5.15`. `develop` (`2.5.16-dev`) ergänzt eine optionale Übergangszeit pro einzelner Lampe. Die bisherigen Sicherheitskorrekturen sind auf beiden Branches enthalten; diese neue Funktion wird zunächst nur auf `develop` angeboten.
+
+### Änderungen in 2.5.16-dev
+
+- Optionale **Übergangszeit (ms)** in den Gerätedetails jeder einzelnen Lampe: leer übernimmt die globale Einstellung, `0` ist ein eigener sofortiger Übergang, `1–60000` ist die individuelle Dauer.
+- Funktioniert mit normalen Einzelbefehlen und Multi-Sync. Andere Lampen behalten ihre Einstellungen und warten nicht auf das Ende des Übergangs. **Dynamics ignorieren** hat weiterhin Vorrang.
+- Netzstart und Zustandsprüfung berücksichtigen die wirksame Übergangszeit. Native Hue-Gruppenbefehle werden nicht aufgeteilt; ihre Übergänge werden nicht vorzeitig durch die Netzstart-Prüfung unterbrochen.
+- Bestehende Zuordnungen und Backups ohne eigenen Wert bleiben bei der globalen Einstellung. Validierung und Speichern unterscheiden ausdrücklich zwischen leer und `0`.
 
 ### Änderungen in 2.5.15
 
@@ -235,7 +242,7 @@ Dieses Repository verwendet zwei Branches:
 | Branch | Version | Zweck |
 | --- | --- | --- |
 | `main` | `2.5.15` | Stabiler Stand für den normalen Betrieb, einschließlich Netzstart-Behandlung, Sicherheitskorrekturen, Statusabgleich und Live-Diagnose |
-| `develop` | `2.5.15-dev` | Aktuell derselbe Anwendungscode und dieselben Abhängigkeiten wie `main`; künftige Änderungen werden zuerst hier getestet |
+| `develop` | `2.5.16-dev` | Entwicklungsstand mit zusätzlicher Übergangszeit pro Lampe; enthält alle Korrekturen aus `main` |
 
 Wenn kein Branch angegeben wird, wird normalerweise `main` installiert. Das ist die empfohlene Variante für den normalen Betrieb.
 
@@ -263,7 +270,7 @@ docker compose up -d --build
 Danach im Webinterface unter **System** prüfen:
 
 ```text
-Version: 2.5.15-dev
+Version: 2.5.16-dev
 ```
 
 ### Zurück auf main
@@ -413,6 +420,7 @@ Sync-Offset      = Feintuning pro einzelner Lampe
 | --- | --- |
 | Loxone Sync | Statusänderungen dieser Lampe werden per UDP an Loxone zurückgemeldet |
 | Dynamics ignorieren | Sendet bei dimmbaren Helligkeits-/Farbwerten ausdrücklich `dynamics.duration: 0`, damit kein Standardübergang entsteht. Reine Schaltaktoren erhalten keine Dynamics |
+| Übergangszeit (ms) | Optional pro einzelner Lampe: leer = globale Einstellung, `0` = sofort, `1–60000` = eigene Dauer. Dynamics ignorieren hat Vorrang; der eigene Wert bleibt dabei gespeichert |
 | Bei unzuverlässiger Übertragung | Optionale Funkmaßnahme pro einzelner Lampe. Standard ist `Keine` |
 | Netzspannung erst mit Lichtbefehl | Aktiviert eine eigene, begrenzte Wiederanlaufbehandlung, wenn die Lampe am Wandschalter stromlos wird. Standard aus |
 | Anlaufwartezeit (ms) | Zusätzliche Wartezeit vor dem ersten Einzelbefehl beim Kaltstart, Standard 0, Bereich 0–10000. Bereits im Multi-Sync-Ablauf vergangene Zeit wird angerechnet |
@@ -428,6 +436,16 @@ Den Sync-Offset erst nach einem Testlauf anpassen:
 Lampe reagiert später  → Offset z. B. -30 ms oder -50 ms
 Lampe reagiert früher  → Offset z. B. +30 ms oder +50 ms
 ```
+
+### Individuelle Übergangszeit
+
+Unter **Lichter → betreffende Lampe → Gerätedetails** befindet sich **Übergangszeit (ms)** direkt bei **Dynamics ignorieren**. Beispiel für sanftes Hochdimmen im Büro: Dynamics ignorieren deaktivieren und `2000` eintragen. Die Lampe erhält dann bei einem Helligkeits-/Farbbefehl einen Übergang von zwei Sekunden. Alle anderen Lampen können das Feld leer lassen und verwenden weiterhin die globale Zeit unter **System**. Zum Zurücksetzen auf global das Feld vollständig leeren und speichern, nicht `0` eintragen.
+
+- Die Dauer gilt bei Einzelbefehlen für Helligkeit, Farbe/Farbtemperatur und Ausschalten, sowohl mit als auch ohne Mehrlampensynchronisierung. Sie ist **keine Sendepause**, kein Sync-Offset und keine Anlaufwartezeit. Gleiche Dauern bedeuten nicht automatisch einen exakt gleichzeitigen Start.
+- Reines Einschalten mit `/lampe/1` enthält keinen Helligkeitszielwert und behält das bisherige Verhalten ohne angeforderten Übergang. Für Hochdimmen einen Helligkeits- oder Szenenwert senden, z. B. `/lampe/80`. Das sichtbare Verhalten nach einer Netztrennung hängt zusätzlich von Startzustand und Bereitschaft der Lampe ab.
+- Native Hue-Gruppen/Räume/Zonen verwenden weiterhin einen Gruppenbefehl mit globaler Dauer bzw. vorhandener expliziter Befehlsvorgabe. Sie übernehmen nicht die individuellen Zeiten ihrer Mitglieder. Effekte wie `candle` und die Dauer von `sunrise` bleiben unabhängig von dieser Einstellung. Reine Schaltaktoren erhalten keine Dynamics.
+- Netzstart und Zustandsprüfung warten den angeforderten Übergang ab. Die **Wiederanlaufzeit** wird dadurch nicht verlängert: Bei einer sehr langen Übergangszeit muss die Frist genügend Zeit für Anlauf, Übergang und Bestätigung lassen. Andere Lampen warten nicht mit.
+- Die optionale Eigenschaft `transition_time_ms` wird in Mapping und Backup gespeichert. Fehlend oder `null` bedeutet global, eine ganze Zahl von `0` bis `60000` einen eigenen Wert. Ältere Clients, die das Feld beim Speichern der Gerätedetails nicht mitsenden, löschen einen vorhandenen Wert nicht.
 
 ### Funkmaßnahmen pro Lampe
 

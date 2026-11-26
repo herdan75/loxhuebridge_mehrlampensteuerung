@@ -1,3 +1,15 @@
+## [2.5.16-dev] - 2026-11-26
+### Übergangszeit pro Lampe
+- Optionales Zahlenfeld mit Infobutton in den Gerätedetails einzelner Lampen. Leer übernimmt die globale Übergangszeit, `0` bedeutet sofort, eigene Werte sind von 1 bis 60000 ms möglich. Dynamics ignorieren hat Vorrang, ohne den gespeicherten eigenen Wert zu löschen.
+- Einzelbefehle und Multi-Sync verwenden die individuelle Dauer. Keine zusätzliche Wartezeit im gemeinsamen Scheduler; native Gruppen, Effekte, reine Einschaltbefehle und Schaltaktoren behalten ihr bisheriges Verhalten.
+- Netzstart-Prüfung berücksichtigt die wirksame Dauer der Lampe und einen noch laufenden nativen Gruppenübergang. Zustandsdiagnose und Nachsteuerungen verwenden weiterhin den tatsächlich angeforderten Übergang; die Wiederanlauffrist bleibt begrenzt.
+- Rückwärtskompatibles Mapping-Feld `transition_time_ms` mit gemeinsamer Validierung für API, Laden und Restore. Ohne eigenen Wert bleiben bestehende Zuordnungen bei global; ein ausgelassenes Feld in der Geräte-API erhält den bisherigen Wert.
+- README mit Einrichtung, Vorrangregeln, Grenzen bei Gruppen/Effekten und Abgrenzung zu Netzstart-/Sendeverzögerungen ergänzt. Nur `develop` wird auf diese Version angehoben; `main` bleibt bei 2.5.15.
+
+### Prüfungen
+- Regressionstests für Wertebereiche, globale Vererbung, explizite Null, Speichern/Restore, Übergänge bei Einzellicht/Multi-Sync, Netzstart und Zustandsprüfung sowie UI-Entwürfe. Tests verwenden simulierte Hue-Antworten; keine physischen Lampen geschaltet.
+- 257 automatisierte Tests erfolgreich, darunter der HTTP-Laufweg vom Speichern über den Lichtbefehl bis zum Backup. Browserprüfung bei 1440 und 390 Pixeln einschließlich Speichern, erneuter Anzeige, leer/Null und Hilfetext. Keine bekannten Schwachstellen bei `npm audit --omit=dev --audit-level=moderate` zum Prüfzeitpunkt.
+
 ## [2.5.15] - 2026-11-25
 ### Sicherheit und Branch-Abgleich
 - Den vorhandenen Stand `2.5.15-dev` auf `main` übernommen. Anwendungscode, Abhängigkeiten und Tests sind auf beiden Branches identisch; nur die Versionskennung unterscheidet `2.5.15` von `2.5.15-dev`.

@@ -57,6 +57,33 @@ function getRouteHandler(path) {
     return layer.route.stack[0].handle;
 }
 
+test('Per-light transition API saves zero, preserves omitted values and clears explicitly', () => {
+    configManager.mapping = [{ loxone_name: 'fade', hue_uuid: 'fade-id', hue_type: 'light' }];
+    const handler = getRouteHandler('/api/mapping/:loxoneName/settings');
+    const base = { sync_lox: false, ignore_dynamics: false, multi_sync: false, sync_offset_ms: 0 };
+    for (const [change, expected] of [
+        [{ transition_time_ms: 2000 }, 2000], [{}, 2000],
+        [{ transition_time_ms: 0 }, 0], [{}, 0], [{ transition_time_ms: null }, null]
+    ]) {
+        let result;
+        handler({ params: { loxoneName: 'fade' }, body: { ...base, ...change } }, {
+            status() { return this; }, json(body) { result = body; }
+        });
+        assert.strictEqual(result.success, true);
+        assert.strictEqual(result.mapping.transition_time_ms, expected);
+        assert.strictEqual(configManager.mapping[0].transition_time_ms, expected);
+    }
+    for (const change of [{ transition_time_ms: -1 }, { transition_time_ms: '2000' }, { transition_time_ms: 60001 }]) {
+        const before = structuredClone(configManager.mapping);
+        let status;
+        handler({ params: { loxoneName: 'fade' }, body: { ...base, ...change } }, {
+            status(code) { status = code; return this; }, json() {}
+        });
+        assert.strictEqual(status, 400);
+        assert.deepStrictEqual(configManager.mapping, before);
+    }
+});
+
 test('Review F01: Leere Loxone-Adressen werden ohne Konfigurationsaenderung abgelehnt', () => {
     const previous = structuredClone(configManager.config);
     for (const loxoneIp of ['', '   ', null, {}, 'bad host']) {
